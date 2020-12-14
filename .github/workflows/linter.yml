@@ -28,7 +28,6 @@ jobs:
 
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1
-        continue-on-error: true
         with:
           command: fmt
           args: --all -- --check
@@ -57,21 +56,18 @@ jobs:
 
       - name: Run cargo clippy with no features enabled
         uses: actions-rs/cargo@v1
-        continue-on-error: true
         with:
           command: clippy
           args: --no-default-features --target=${{ matrix.target }} -- -D warnings
 
       - name: Run cargo clippy with default features
         uses: actions-rs/cargo@v1
-        continue-on-error: true
         with:
           command: clippy
           args: --target=${{ matrix.target }} -- -D warnings
 
       - name: Run cargo clippy with derive-serde
         uses: actions-rs/cargo@v1
-        continue-on-error: true
         with:
           command: clippy
           args: --target=${{ matrix.target }} --all-features -- -D warnings
