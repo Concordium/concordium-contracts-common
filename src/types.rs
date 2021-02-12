@@ -5,16 +5,19 @@ use core::{convert, fmt, iter, ops, str};
 #[cfg(feature = "std")]
 use std::{convert, fmt, iter, ops, str};
 
+#[cfg(feature = "fuzz")]
+use arbitrary::Arbitrary;
+#[cfg(feature = "derive-serde")]
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
+
 /// Size of an account address when serialized in binary.
 /// NB: This is different from the Base58 representation.
 pub const ACCOUNT_ADDRESS_SIZE: usize = 32;
 
-#[cfg(feature = "derive-serde")]
-use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-
 /// The type of amounts on the chain
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct Amount {
     pub micro_gtu: u64,
 }
@@ -307,6 +310,7 @@ impl ops::RemAssign<u64> for Amount {
 /// Timestamps from before January 1st 1970 at 00:00 are not supported.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct Timestamp {
     /// Milliseconds since unix epoch.
     pub(crate) milliseconds: u64,
@@ -568,6 +572,7 @@ impl fmt::Display for Duration {
 
 /// Address of an account, as raw bytes.
 #[derive(Eq, PartialEq, Copy, Clone, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
 impl convert::AsRef<[u8; 32]> for AccountAddress {
@@ -581,6 +586,7 @@ impl convert::AsRef<[u8]> for AccountAddress {
 /// Address of a contract.
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 #[cfg_attr(feature = "derive-serde", derive(SerdeSerialize, SerdeDeserialize))]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct ContractAddress {
     pub index:    u64,
     pub subindex: u64,
@@ -592,6 +598,7 @@ pub struct ContractAddress {
     derive(SerdeSerialize, SerdeDeserialize),
     serde(tag = "type", content = "address", rename_all = "lowercase")
 )]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary, Debug))]
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Address {
     Account(AccountAddress),
@@ -622,6 +629,7 @@ pub type SlotTime = Timestamp;
     derive(SerdeSerialize, SerdeDeserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary, Debug, Clone))]
 pub struct ChainMetadata {
     pub slot_time: SlotTime,
 }
@@ -635,6 +643,7 @@ pub struct Cursor<T> {
 /// Tag of an attribute. See the module [attributes](./attributes/index.html)
 /// for the currently supported attributes.
 #[repr(transparent)]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
@@ -666,6 +675,7 @@ pub type IdentityProvider = u32;
 /// borrowed or owned, in the form of an iterator over key-value pairs or a
 /// vector of such. This flexibility is needed so that attributes can be
 /// accessed efficiently, as well as constructed conveniently for testing.
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[derive(Debug, Clone)]
 pub struct Policy<Attributes> {
     /// Identity of the identity provider who signed the identity object that
@@ -697,8 +707,9 @@ impl<'de> SerdeDeserialize<'de> for OwnedPolicy {
 
 #[cfg(feature = "derive-serde")]
 mod policy_json {
-    use super::*;
     use convert::{TryFrom, TryInto};
+
+    use super::*;
 
     pub(crate) struct OwnedPolicyVisitor;
 
@@ -801,6 +812,7 @@ mod policy_json {
 pub mod attributes {
     // NB: These names and values must match the rest of the Concordium ecosystem.
     use super::{convert, AttributeTag};
+
     pub const FIRST_NAME: AttributeTag = AttributeTag(0u8);
     pub const LAST_NAME: AttributeTag = AttributeTag(1u8);
     pub const SEX: AttributeTag = AttributeTag(2u8);
@@ -877,11 +889,13 @@ pub type ParseResult<A> = Result<A, ParseError>;
 
 #[cfg(feature = "derive-serde")]
 mod serde_impl {
-    // FIXME: This is duplicated from crypto/id/types.
-    use super::*;
+    use std::fmt;
+
     use base58check::*;
     use serde::{de, de::Visitor, Deserializer, Serializer};
-    use std::fmt;
+
+    // FIXME: This is duplicated from crypto/id/types.
+    use super::*;
 
     // Parse from string assuming base58 check encoding.
     impl str::FromStr for AccountAddress {
@@ -953,8 +967,9 @@ mod serde_impl {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn test_duration_from_string_simple() {
