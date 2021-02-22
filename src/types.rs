@@ -80,7 +80,7 @@ impl str::FromStr for Amount {
         let mut after_dot = 0;
         let mut state = 0;
         for c in v.bytes() {
-            let d = c - '0' as u8;
+            let d = c.wrapping_sub(b'0');
             match state {
                 0 => {
                     // looking at the first character.
@@ -98,7 +98,7 @@ impl str::FromStr for Amount {
                 1 => {
                     // we want to be looking at a dot now (unless we reached the end, in which case
                     // this is not reachable anyhow)
-                    if c != '.' as u8 {
+                    if c != b'.' {
                         return Err(AmountParseError::ExpectedDot);
                     } else {
                         state = 3;
@@ -111,7 +111,7 @@ impl str::FromStr for Amount {
                         micro_gtu = micro_gtu
                             .checked_add(u64::from(d))
                             .ok_or(AmountParseError::Overflow)?;
-                    } else if c == '.' as u8 {
+                    } else if c == b'.' {
                         state = 3;
                     } else {
                         return Err(AmountParseError::ExpectedDigitOrDot);
