@@ -79,11 +79,12 @@ impl str::FromStr for Amount {
         let mut micro_gtu: u64 = 0;
         let mut after_dot = 0;
         let mut state = 0;
-        for c in v.chars() {
+        for c in v.bytes() {
+            let d = c - '0' as u8;
             match state {
                 0 => {
                     // looking at the first character.
-                    if let Some(d) = c.to_digit(10) {
+                    if d <= 9 {
                         if d == 0 {
                             state = 1;
                         } else {
@@ -97,7 +98,7 @@ impl str::FromStr for Amount {
                 1 => {
                     // we want to be looking at a dot now (unless we reached the end, in which case
                     // this is not reachable anyhow)
-                    if c != '.' {
+                    if c != '.' as u8 {
                         return Err(AmountParseError::ExpectedDot);
                     } else {
                         state = 3;
@@ -105,12 +106,12 @@ impl str::FromStr for Amount {
                 }
                 2 => {
                     // we are reading a normal number until we hit the dot.
-                    if let Some(d) = c.to_digit(10) {
+                    if d <= 9 {
                         micro_gtu = micro_gtu.checked_mul(10).ok_or(AmountParseError::Overflow)?;
                         micro_gtu = micro_gtu
                             .checked_add(u64::from(d))
                             .ok_or(AmountParseError::Overflow)?;
-                    } else if c == '.' {
+                    } else if c == '.' as u8 {
                         state = 3;
                     } else {
                         return Err(AmountParseError::ExpectedDigitOrDot);
@@ -121,7 +122,7 @@ impl str::FromStr for Amount {
                     if after_dot >= 6 {
                         return Err(AmountParseError::AtMostSixDecimals);
                     }
-                    if let Some(d) = c.to_digit(10) {
+                    if d <= 9 {
                         micro_gtu = micro_gtu.checked_mul(10).ok_or(AmountParseError::Overflow)?;
                         micro_gtu = micro_gtu
                             .checked_add(u64::from(d))
