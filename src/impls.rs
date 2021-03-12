@@ -1,4 +1,4 @@
-use crate::{traits::*, types::*};
+use crate::{constants::*, traits::*, types::*};
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, collections::*, string::String, vec::Vec};
@@ -6,8 +6,6 @@ use alloc::{boxed::Box, collections::*, string::String, vec::Vec};
 use core::{marker, mem::MaybeUninit, slice};
 #[cfg(feature = "std")]
 use std::{collections::*, marker, mem::MaybeUninit, slice};
-
-static MAX_PREALLOCATED_CAPACITY: usize = 4096;
 
 /// Apply the given macro to each of the elements in the list
 /// For example, `repeat_macro!(println, "foo", "bar")` is equivalent to
@@ -65,8 +63,21 @@ impl Serial for u64 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_u64(*self) }
 }
 
+impl Serial for u128 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(&self.to_le_bytes())
+    }
+}
+
 impl Deserial for u64 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> { source.read_u64() }
+}
+
+impl Deserial for u128 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let bytes = read_n_bytes!(16, source);
+        Ok(u128::from_le_bytes(bytes))
+    }
 }
 
 impl Serial for i8 {
@@ -99,6 +110,19 @@ impl Serial for i64 {
 
 impl Deserial for i64 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> { source.read_i64() }
+}
+
+impl Serial for i128 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(&self.to_le_bytes())
+    }
+}
+
+impl Deserial for i128 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let bytes = read_n_bytes!(16, source);
+        Ok(i128::from_le_bytes(bytes))
+    }
 }
 
 /// Serialization of `bool` encodes it as a single byte, `false` is represented
@@ -162,10 +186,16 @@ impl Deserial for Duration {
 
 /// Serialized by writing an `u32` representing the number of bytes for a
 /// utf8-encoding of the string, then writing the bytes. Similar to `Vec<_>`.
-impl Serial for String {
+impl Serial for &str {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.bytes().collect::<Vec<_>>().serial(out)
+        self.as_bytes().to_vec().serial(out)
     }
+}
+
+/// Serialized by writing an `u32` representing the number of bytes for a
+/// utf8-encoding of the string, then writing the bytes. Similar to `&str`.
+impl Serial for String {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.as_str().serial(out) }
 }
 
 /// Deserial by reading an `u32` representing the number of bytes, then takes
@@ -291,6 +321,53 @@ impl Deserial for Address {
             1 => Ok(Address::Contract(source.get()?)),
             _ => Err(ParseError::default()),
         }
+    }
+}
+
+impl<'a> Serial for ContractName<'a> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let name = self.get_chain_name();
+        let len = name.len() as u16;
+        len.serial(out)?;
+        serial_vector_no_length(name.as_bytes(), out)
+    }
+}
+
+impl Serial for OwnedContractName {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.as_ref().serial(out) }
+}
+
+impl Deserial for OwnedContractName {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let len: u16 = source.get()?;
+        let bytes = deserial_vector_no_length(source, len as usize)?;
+        let name = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
+        let owned_contract_name =
+            OwnedContractName::new(name).map_err(|_| ParseError::default())?;
+        Ok(owned_contract_name)
+    }
+}
+
+impl<'a> Serial for ReceiveName<'a> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let name = self.get_chain_name();
+        let len = name.len() as u16;
+        len.serial(out)?;
+        serial_vector_no_length(name.as_bytes(), out)
+    }
+}
+
+impl Serial for OwnedReceiveName {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.as_ref().serial(out) }
+}
+
+impl Deserial for OwnedReceiveName {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let len: u16 = source.get()?;
+        let bytes = deserial_vector_no_length(source, len as usize)?;
+        let name = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
+        let owned_receive_name = OwnedReceiveName::new(name).map_err(|_| ParseError::default())?;
+        Ok(owned_receive_name)
     }
 }
 

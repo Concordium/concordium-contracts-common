@@ -86,10 +86,12 @@ pub enum Type {
     U16,
     U32,
     U64,
+    U128,
     I8,
     I16,
     I32,
     I64,
+    I128,
     Amount,
     AccountAddress,
     ContractAddress,
@@ -102,6 +104,9 @@ pub enum Type {
     Array(u32, Box<Type>),
     Struct(Fields),
     Enum(Vec<(String, Fields)>),
+    String(SizeLength),
+    ContractName(SizeLength),
+    ReceiveName(SizeLength),
 }
 
 impl Type {
@@ -113,6 +118,7 @@ impl Type {
             Type::List(_, ty) => Type::List(size_len, ty),
             Type::Set(_, ty) => Type::Set(size_len, ty),
             Type::Map(_, key_ty, val_ty) => Type::Map(size_len, key_ty, val_ty),
+            Type::String(_) => Type::String(size_len),
             t => t,
         }
     }
@@ -136,6 +142,9 @@ impl SchemaType for u32 {
 impl SchemaType for u64 {
     fn get_type() -> Type { Type::U64 }
 }
+impl SchemaType for u128 {
+    fn get_type() -> Type { Type::U128 }
+}
 impl SchemaType for i8 {
     fn get_type() -> Type { Type::I8 }
 }
@@ -147,6 +156,9 @@ impl SchemaType for i32 {
 }
 impl SchemaType for i64 {
     fn get_type() -> Type { Type::I64 }
+}
+impl SchemaType for i128 {
+    fn get_type() -> Type { Type::I128 }
 }
 impl SchemaType for Amount {
     fn get_type() -> Type { Type::Amount }
@@ -187,6 +199,18 @@ impl<K: SchemaType, V: SchemaType> SchemaType for BTreeMap<K, V> {
 }
 impl SchemaType for [u8] {
     fn get_type() -> Type { Type::List(SizeLength::U32, Box::new(Type::U8)) }
+}
+
+impl SchemaType for String {
+    fn get_type() -> Type { Type::String(SizeLength::U32) }
+}
+
+impl SchemaType for OwnedContractName {
+    fn get_type() -> Type { Type::ContractName(SizeLength::U16) }
+}
+
+impl SchemaType for OwnedReceiveName {
+    fn get_type() -> Type { Type::ReceiveName(SizeLength::U16) }
 }
 
 macro_rules! schema_type_array_x {
@@ -332,87 +356,70 @@ impl Deserial for SizeLength {
 impl Serial for Type {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
-            Type::Unit => {
-                out.write_u8(0)?;
-            }
-            Type::Bool => {
-                out.write_u8(1)?;
-            }
-            Type::U8 => {
-                out.write_u8(2)?;
-            }
-            Type::U16 => {
-                out.write_u8(3)?;
-            }
-            Type::U32 => {
-                out.write_u8(4)?;
-            }
-            Type::U64 => {
-                out.write_u8(5)?;
-            }
-            Type::I8 => {
-                out.write_u8(6)?;
-            }
-            Type::I16 => {
-                out.write_u8(7)?;
-            }
-            Type::I32 => {
-                out.write_u8(8)?;
-            }
-            Type::I64 => {
-                out.write_u8(9)?;
-            }
-            Type::Amount => {
-                out.write_u8(10)?;
-            }
-            Type::AccountAddress => {
-                out.write_u8(11)?;
-            }
-            Type::ContractAddress => {
-                out.write_u8(12)?;
-            }
-            Type::Timestamp => {
-                out.write_u8(13)?;
-            }
-            Type::Duration => {
-                out.write_u8(14)?;
-            }
+            Type::Unit => out.write_u8(0),
+            Type::Bool => out.write_u8(1),
+            Type::U8 => out.write_u8(2),
+            Type::U16 => out.write_u8(3),
+            Type::U32 => out.write_u8(4),
+            Type::U64 => out.write_u8(5),
+            Type::I8 => out.write_u8(6),
+            Type::I16 => out.write_u8(7),
+            Type::I32 => out.write_u8(8),
+            Type::I64 => out.write_u8(9),
+            Type::Amount => out.write_u8(10),
+            Type::AccountAddress => out.write_u8(11),
+            Type::ContractAddress => out.write_u8(12),
+            Type::Timestamp => out.write_u8(13),
+            Type::Duration => out.write_u8(14),
             Type::Pair(left, right) => {
                 out.write_u8(15)?;
                 left.serial(out)?;
-                right.serial(out)?;
+                right.serial(out)
             }
             Type::List(len_size, ty) => {
                 out.write_u8(16)?;
                 len_size.serial(out)?;
-                ty.serial(out)?;
+                ty.serial(out)
             }
             Type::Set(len_size, ty) => {
                 out.write_u8(17)?;
                 len_size.serial(out)?;
-                ty.serial(out)?;
+                ty.serial(out)
             }
             Type::Map(len_size, key, value) => {
                 out.write_u8(18)?;
                 len_size.serial(out)?;
                 key.serial(out)?;
-                value.serial(out)?;
+                value.serial(out)
             }
             Type::Array(len, ty) => {
                 out.write_u8(19)?;
                 len.serial(out)?;
-                ty.serial(out)?;
+                ty.serial(out)
             }
             Type::Struct(fields) => {
                 out.write_u8(20)?;
-                fields.serial(out)?;
+                fields.serial(out)
             }
             Type::Enum(fields) => {
                 out.write_u8(21)?;
-                fields.serial(out)?;
+                fields.serial(out)
+            }
+            Type::String(len) => {
+                out.write_u8(22)?;
+                len.serial(out)
+            }
+            Type::U128 => out.write_u8(23),
+            Type::I128 => out.write_u8(24),
+            Type::ContractName(len_size) => {
+                out.write_u8(25)?;
+                len_size.serial(out)
+            }
+            Type::ReceiveName(len_size) => {
+                out.write_u8(26)?;
+                len_size.serial(out)
             }
         }
-        Ok(())
     }
 }
 
@@ -469,6 +476,20 @@ impl Deserial for Type {
                 let variants = source.get()?;
                 Ok(Type::Enum(variants))
             }
+            22 => {
+                let len_size = SizeLength::deserial(source)?;
+                Ok(Type::String(len_size))
+            }
+            23 => Ok(Type::U128),
+            24 => Ok(Type::I128),
+            25 => {
+                let len_size = SizeLength::deserial(source)?;
+                Ok(Type::ContractName(len_size))
+            }
+            26 => {
+                let len_size = SizeLength::deserial(source)?;
+                Ok(Type::ReceiveName(len_size))
+            }
             _ => Err(ParseError::default()),
         }
     }
@@ -477,6 +498,7 @@ impl Deserial for Type {
 #[cfg(feature = "derive-serde")]
 mod impls {
     use super::*;
+    use crate::constants::*;
     impl Fields {
         pub fn to_json<R: Read>(&self, source: &mut R) -> ParseResult<serde_json::Value> {
             use serde_json::*;
@@ -526,12 +548,41 @@ mod impls {
         item_to_json: impl Fn(&mut R) -> ParseResult<serde_json::Value>,
     ) -> ParseResult<Vec<serde_json::Value>> {
         let len = deserial_length(source, size_len)?;
-        let mut values = Vec::with_capacity(len);
+        let mut values = Vec::with_capacity(std::cmp::min(MAX_PREALLOCATED_CAPACITY, len));
         for _ in 0..len {
             let value = item_to_json(source)?;
             values.push(value);
         }
         Ok(values)
+    }
+
+    fn deserial_string<R: Read>(source: &mut R, size_len: &SizeLength) -> ParseResult<String> {
+        let len = deserial_length(source, size_len)?;
+        // we are doing this case analysis so that we have a fast path for safe,
+        // most common, lengths, and a slower one longer ones.
+        if len <= MAX_PREALLOCATED_CAPACITY {
+            let mut bytes = vec![0u8; len];
+            source.read_exact(&mut bytes)?;
+            Ok(String::from_utf8(bytes)?)
+        } else {
+            let mut bytes: Vec<u8> = Vec::with_capacity(MAX_PREALLOCATED_CAPACITY);
+            let mut buf = [0u8; 64];
+            let mut read = 0;
+            while read < len {
+                let new = source.read(&mut buf)?;
+                if new == 0 {
+                    break;
+                } else {
+                    read += new;
+                    bytes.extend_from_slice(&buf[..new]);
+                }
+            }
+            if read == len {
+                Ok(String::from_utf8(bytes)?)
+            } else {
+                Err(ParseError {})
+            }
+        }
     }
 
     impl Type {
@@ -568,6 +619,10 @@ mod impls {
                     let n = u64::deserial(source)?;
                     Ok(Value::Number(n.into()))
                 }
+                Type::U128 => {
+                    let n = u128::deserial(source)?;
+                    Ok(Value::String(n.to_string()))
+                }
                 Type::I8 => {
                     let n = i8::deserial(source)?;
                     Ok(Value::Number(n.into()))
@@ -583,6 +638,10 @@ mod impls {
                 Type::I64 => {
                     let n = i64::deserial(source)?;
                     Ok(Value::Number(n.into()))
+                }
+                Type::I128 => {
+                    let n = i128::deserial(source)?;
+                    Ok(Value::String(n.to_string()))
                 }
                 Type::Amount => {
                     let n = Amount::deserial(source)?;
@@ -627,7 +686,8 @@ mod impls {
                 }
                 Type::Array(len, ty) => {
                     let len: usize = (*len).try_into()?;
-                    let mut values = Vec::with_capacity(len);
+                    let mut values =
+                        Vec::with_capacity(std::cmp::min(MAX_PREALLOCATED_CAPACITY, len));
                     for _ in 0..len {
                         let value = ty.to_json(source)?;
                         values.push(value);
@@ -647,6 +707,25 @@ mod impls {
                     let (name, fields_ty) = variants.get(idx).ok_or_else(ParseError::default)?;
                     let fields = fields_ty.to_json(source)?;
                     Ok(json!({ name: fields }))
+                }
+                Type::String(size_len) => {
+                    let string = deserial_string(source, size_len)?;
+                    Ok(Value::String(string))
+                }
+                Type::ContractName(size_len) => {
+                    let contract_name = OwnedContractName::new(deserial_string(source, size_len)?)
+                        .map_err(|_| ParseError::default())?;
+                    let name_without_init =
+                        contract_name.contract_name().ok_or_else(ParseError::default)?;
+                    Ok(json!({ "contract": name_without_init }))
+                }
+                Type::ReceiveName(size_len) => {
+                    let receive_name = OwnedReceiveName::new(deserial_string(source, size_len)?)
+                        .map_err(|_| ParseError::default())?;
+                    let contract_name =
+                        receive_name.contract_name().ok_or_else(ParseError::default)?;
+                    let func_name = receive_name.func_name().ok_or_else(ParseError::default)?;
+                    Ok(json!({"contract": contract_name, "func": func_name}))
                 }
             }
         }
