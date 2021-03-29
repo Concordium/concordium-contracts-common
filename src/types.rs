@@ -882,9 +882,8 @@ impl<'de> SerdeDeserialize<'de> for OwnedPolicy {
 
 #[cfg(feature = "derive-serde")]
 mod policy_json {
-    use convert::{TryFrom, TryInto};
-
     use super::*;
+    use convert::{TryFrom, TryInto};
 
     pub(crate) struct OwnedPolicyVisitor;
 
@@ -987,7 +986,6 @@ mod policy_json {
 pub mod attributes {
     // NB: These names and values must match the rest of the Concordium ecosystem.
     use super::{convert, AttributeTag};
-
     pub const FIRST_NAME: AttributeTag = AttributeTag(0u8);
     pub const LAST_NAME: AttributeTag = AttributeTag(1u8);
     pub const SEX: AttributeTag = AttributeTag(2u8);
@@ -1064,13 +1062,11 @@ pub type ParseResult<A> = Result<A, ParseError>;
 
 #[cfg(feature = "derive-serde")]
 mod serde_impl {
-    use std::fmt;
-
-    use base58check::*;
-    use serde::{de, de::Visitor, Deserializer, Serializer};
-
     // FIXME: This is duplicated from crypto/id/types.
     use super::*;
+    use base58check::*;
+    use serde::{de, de::Visitor, Deserializer, Serializer};
+    use std::fmt;
 
     // Parse from string assuming base58 check encoding.
     impl str::FromStr for AccountAddress {
@@ -1142,9 +1138,8 @@ mod serde_impl {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn test_duration_from_string_simple() {
