@@ -33,11 +33,11 @@ version = "0.1"
 [features]
 default = ["std"]
 
-std = ["arbitrary"]
+std = []
 
 derive-serde = ["serde", "serde_json", "std", "base58check", "chrono"]
 
-fuzz = ["derive-serde"]
+fuzz = ["derive-serde", "arbitrary"]
 
 [lib]
 # Since we don't define an allocator in this crate, we can only produce an rlib
