@@ -864,8 +864,9 @@ mod test {
         let xs: [u64; 1] = [123];
         let bytes = to_bytes(&xs);
         let xs2: ParseResult<[u64; 1]> = from_bytes(&bytes);
-        assert!(
-            xs == xs2.unwrap(),
+        assert_eq!(
+            xs,
+            xs2.unwrap(),
             "Serializing and then deserializing should return original value."
         );
     }
@@ -875,8 +876,9 @@ mod test {
         let xs: [String; 1] = ["hello".to_string()];
         let bytes = to_bytes(&xs);
         let xs2: ParseResult<[String; 1]> = from_bytes(&bytes);
-        assert!(
-            xs == xs2.unwrap(),
+        assert_eq!(
+            xs,
+            xs2.unwrap(),
             "Serializing and then deserializing should return original value."
         );
     }
