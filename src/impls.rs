@@ -712,8 +712,8 @@ impl<T: Serial, const N: usize> Serial for [T; N] {
 impl<T: Deserial, const N: usize> Deserial for [T; N] {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut data: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
-        for i in 0..N {
-            data[i] = MaybeUninit::new(T::deserial(source)?);
+        for item in data.iter_mut() {
+            *item = MaybeUninit::new(T::deserial(source)?);
         }
         Ok(unsafe { data.as_ptr().cast::<[T; N]>().read() })
     }
