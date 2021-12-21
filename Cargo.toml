@@ -57,3 +57,5 @@ crate-type = ["rlib"]
 arbitrary = { version = "0.4", features = ["derive"] }
 rand = "=0.7"
 rand_pcg = "0.2.1"
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"

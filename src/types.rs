@@ -11,6 +11,8 @@ use hash::Hash;
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "std")]
 use std::{cmp, convert, fmt, hash, iter, ops, str};
+#[cfg(test)]
+use quickcheck::*;
 
 /// Reexport of the `HashMap` from `hashbrown` with the default hasher set to
 /// the `fnv` hash function.
@@ -30,6 +32,17 @@ pub const ACCOUNT_ADDRESS_SIZE: usize = 32;
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct Amount {
     pub micro_ccd: u64,
+}
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for Amount {
+    fn arbitrary(g: &mut Gen) -> Amount {
+        Amount{micro_ccd: quickcheck::Arbitrary::arbitrary(g)}
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.micro_ccd.shrink().map(|mccd| Amount{micro_ccd: mccd}))
+    }
 }
 
 #[cfg(feature = "derive-serde")]
@@ -326,6 +339,18 @@ pub struct Timestamp {
     pub(crate) milliseconds: u64,
 }
 
+#[cfg(test)]
+impl quickcheck::Arbitrary for Timestamp {
+    fn arbitrary(g: &mut Gen) -> Timestamp {
+        Timestamp{milliseconds: quickcheck::Arbitrary::arbitrary(g)}
+        //todo should additional requirements be added?
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.milliseconds.shrink().map(|ms| Timestamp{milliseconds: ms}))
+    }
+}
+
 impl Timestamp {
     /// Construct timestamp from milliseconds since unix epoch.
     #[inline(always)]
@@ -585,6 +610,20 @@ impl fmt::Display for Duration {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
+#[cfg(test)]
+impl quickcheck::Arbitrary for AccountAddress {
+    fn arbitrary(g: &mut Gen) -> AccountAddress {
+        //todo should it satisfy any properties, or are random bytes okay?
+        let mut bytes = [0u8; ACCOUNT_ADDRESS_SIZE];
+        for i in 0..ACCOUNT_ADDRESS_SIZE {
+            bytes[i] = quickcheck::Arbitrary::arbitrary(g);
+        }
+        AccountAddress(bytes)
+    }
+
+    // todo leave shrinking empty?
+}
+
 impl convert::AsRef<[u8; 32]> for AccountAddress {
     fn as_ref(&self) -> &[u8; 32] { &self.0 }
 }
@@ -602,6 +641,22 @@ pub struct ContractAddress {
     pub subindex: u64,
 }
 
+#[cfg(test)]
+impl quickcheck::Arbitrary for ContractAddress {
+    fn arbitrary(g: &mut Gen) -> ContractAddress {
+        ContractAddress{
+            index: quickcheck::Arbitrary::arbitrary(g),
+            subindex: quickcheck::Arbitrary::arbitrary(g)
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let index_shrink = self.index.shrink().into_iter();
+        let subindex_shrink = self.subindex.shrink().into_iter();
+        Box::new(index_shrink.zip(subindex_shrink).map(|(i, si)| ContractAddress{index: i, subindex: si}))
+    }
+}
+
 /// Either an address of an account, or contract.
 #[cfg_attr(
     feature = "derive-serde",
@@ -613,6 +668,26 @@ pub struct ContractAddress {
 pub enum Address {
     Account(AccountAddress),
     Contract(ContractAddress),
+}
+
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for Address {
+    fn arbitrary(g: &mut Gen) -> Address {
+        if quickcheck::Arbitrary::arbitrary(g){
+            Address::Account(quickcheck::Arbitrary::arbitrary(g))
+        } else {
+            Address::Contract(quickcheck::Arbitrary::arbitrary(g))
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        //todo can leave empty if they cannot be shrunk in a meaningful way
+        match self {
+            Address::Account(a) => Box::new(a.shrink().map(|shrunk| Address::Account(shrunk))),
+            Address::Contract(a) => Box::new(a.shrink().map(|shrunk| Address::Contract(shrunk)))
+        }
+    }
 }
 
 // This trait is implemented manually to produce fewer bytes in the generated
@@ -883,8 +958,20 @@ pub type SlotTime = Timestamp;
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "fuzz", derive(Arbitrary, Debug, Clone))]
+#[cfg_attr(test, derive(Clone))]
 pub struct ChainMetadata {
     pub slot_time: SlotTime,
+}
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for ChainMetadata {
+    fn arbitrary(g: &mut Gen) -> ChainMetadata {
+        ChainMetadata{slot_time: quickcheck::Arbitrary::arbitrary(g)}
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.slot_time.shrink().map(|st| ChainMetadata{slot_time: st}))
+    }
 }
 
 /// Add offset tracking inside a data structure.
@@ -899,6 +986,18 @@ pub struct Cursor<T> {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for AttributeTag {
+    fn arbitrary(g: &mut Gen) -> AttributeTag {
+        AttributeTag(quickcheck::Arbitrary::arbitrary(g))
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.0.shrink().map(|tag| AttributeTag(tag)))
+    }
+}
+
 
 /// A borrowed attribute value. The slice will have at most 31 bytes.
 /// The meaning of the bytes is dependent on the type of the attribute.
@@ -946,6 +1045,34 @@ pub struct Policy<Attributes> {
     /// List of attributes, in ascending order of the tag.
     pub items:             Attributes,
 }
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for OwnedPolicy {
+    fn arbitrary(g: &mut Gen) -> OwnedPolicy {
+        OwnedPolicy{
+            identity_provider: quickcheck::Arbitrary::arbitrary(g),
+            created_at: quickcheck::Arbitrary::arbitrary(g),
+            valid_to: quickcheck::Arbitrary::arbitrary(g),
+            items: quickcheck::Arbitrary::arbitrary(g),
+        }
+        //todo maybe some restrictions on the generated values are needed
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.identity_provider.shrink().into_iter().zip(
+                self.created_at.shrink().into_iter()).zip(
+                    self.valid_to.shrink().into_iter()).zip(
+                        self.items.shrink().into_iter()).map(|(((ip, ca), vt), it)| {
+                            OwnedPolicy{
+                                identity_provider: ip,
+                                created_at: ca,
+                                valid_to: vt,
+                                items: it,
+                            }}))
+    }
+}
+
 
 /// This implementation of deserialize is only useful when used
 /// to deserialize JSON. Other formats could be implemented in the future.
