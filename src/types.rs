@@ -7,7 +7,7 @@ use cmp::Ordering;
 #[cfg(not(feature = "std"))]
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 use quickcheck::*;
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
@@ -34,7 +34,7 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
         Amount {
@@ -343,7 +343,7 @@ pub struct Timestamp {
     pub(crate) milliseconds: u64,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for Timestamp {
     fn arbitrary(g: &mut Gen) -> Timestamp {
         Timestamp {
@@ -618,7 +618,7 @@ impl fmt::Display for Duration {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
         //todo should it satisfy any properties, or are random bytes okay?
@@ -649,7 +649,7 @@ pub struct ContractAddress {
     pub subindex: u64,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for ContractAddress {
     fn arbitrary(g: &mut Gen) -> ContractAddress {
         ContractAddress {
@@ -681,7 +681,7 @@ pub enum Address {
     Contract(ContractAddress),
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for Address {
     fn arbitrary(g: &mut Gen) -> Address {
         if quickcheck::Arbitrary::arbitrary(g) {
@@ -1081,13 +1081,13 @@ pub type SlotTime = Timestamp;
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
-#[cfg_attr(any(all(not(target_arch = "wasm32"), feature = "std"), feature = "fuzz"), derive(Clone))]
+#[cfg_attr(any(feature = "std", feature = "fuzz"), derive(Clone))]
 #[derive(Debug)]
 pub struct ChainMetadata {
     pub slot_time: SlotTime,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for ChainMetadata {
     fn arbitrary(g: &mut Gen) -> ChainMetadata {
         ChainMetadata {
@@ -1116,7 +1116,7 @@ pub struct Cursor<T> {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for AttributeTag {
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
@@ -1172,7 +1172,7 @@ pub struct Policy<Attributes> {
     pub items:             Attributes,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
+#[cfg(feature = "std")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         OwnedPolicy {
