@@ -695,7 +695,9 @@ impl quickcheck::Arbitrary for Address {
         //todo can leave empty if they cannot be shrunk in a meaningful way
         match self {
             Address::Account(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Account)),
-            Address::Contract(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Contract)),
+            Address::Contract(a) => {
+                Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Contract))
+            }
         }
     }
 }
