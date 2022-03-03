@@ -43,7 +43,7 @@ impl quickcheck::Arbitrary for Amount {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.micro_ccd.shrink().map(|mccd| Amount {
+        Box::new(quickcheck::Arbitrary::shrink(&self.micro_ccd).map(|mccd| Amount {
             micro_ccd: mccd,
         }))
     }
@@ -353,7 +353,7 @@ impl quickcheck::Arbitrary for Timestamp {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.milliseconds.shrink().map(|ms| Timestamp {
+        Box::new(quickcheck::Arbitrary::shrink(&self.milliseconds).map(|ms| Timestamp {
             milliseconds: ms,
         }))
     }
@@ -659,8 +659,8 @@ impl quickcheck::Arbitrary for ContractAddress {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        let index_shrink = self.index.shrink().into_iter();
-        let subindex_shrink = self.subindex.shrink().into_iter();
+        let index_shrink = quickcheck::Arbitrary::shrink(&self.index);
+        let subindex_shrink = quickcheck::Arbitrary::shrink(&self.subindex);
         Box::new(index_shrink.zip(subindex_shrink).map(|(i, si)| ContractAddress {
             index:    i,
             subindex: si,
@@ -694,8 +694,8 @@ impl quickcheck::Arbitrary for Address {
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         //todo can leave empty if they cannot be shrunk in a meaningful way
         match self {
-            Address::Account(a) => Box::new(a.shrink().map(|shrunk| Address::Account(shrunk))),
-            Address::Contract(a) => Box::new(a.shrink().map(|shrunk| Address::Contract(shrunk))),
+            Address::Account(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Account)),
+            Address::Contract(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Contract)),
         }
     }
 }
@@ -1078,8 +1078,8 @@ pub type SlotTime = Timestamp;
     derive(SerdeSerialize, SerdeDeserialize),
     serde(rename_all = "camelCase")
 )]
-#[cfg_attr(feature = "fuzz", derive(Arbitrary, Clone))]
-#[cfg_attr(feature = "qc", derive(Clone))]
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+#[cfg_attr(any(feature = "qc", feature = "fuzz"), derive(Clone))]
 #[derive(Debug)]
 pub struct ChainMetadata {
     pub slot_time: SlotTime,
@@ -1094,7 +1094,7 @@ impl quickcheck::Arbitrary for ChainMetadata {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.slot_time.shrink().map(|st| ChainMetadata {
+        Box::new(quickcheck::Arbitrary::shrink(&self.slot_time).map(|st| ChainMetadata {
             slot_time: st,
         }))
     }
@@ -1119,7 +1119,7 @@ impl quickcheck::Arbitrary for AttributeTag {
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.0.shrink().map(|tag| AttributeTag(tag)))
+        Box::new(quickcheck::Arbitrary::shrink(&self.0).map(AttributeTag))
     }
 }
 
@@ -1184,12 +1184,11 @@ impl quickcheck::Arbitrary for OwnedPolicy {
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(
-            self.identity_provider
-                .shrink()
+            quickcheck::Arbitrary::shrink(&self.identity_provider)
                 .into_iter()
-                .zip(self.created_at.shrink().into_iter())
-                .zip(self.valid_to.shrink().into_iter())
-                .zip(self.items.shrink().into_iter())
+                .zip(quickcheck::Arbitrary::shrink(&self.created_at).into_iter())
+                .zip(quickcheck::Arbitrary::shrink(&self.valid_to).into_iter())
+                .zip(quickcheck::Arbitrary::shrink(&self.items).into_iter())
                 .map(|(((ip, ca), vt), it)| OwnedPolicy {
                     identity_provider: ip,
                     created_at:        ca,
