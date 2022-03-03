@@ -925,7 +925,7 @@ impl OwnedReceiveName {
 
 /// An entrypoint name (borrowed version). Expected format:
 /// "<func_name>" where
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy, Hash)]
 pub struct EntrypointName<'a>(pub(crate) &'a str);
 
 impl<'a> EntrypointName<'a> {
@@ -959,7 +959,7 @@ impl<'a> From<EntrypointName<'a>> for OwnedEntrypointName {
 
 /// An entrypoint name (owned version). Expected format:
 /// "<func_name>" where
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Hash)]
 pub struct OwnedEntrypointName(pub(crate) String);
 
 impl fmt::Display for OwnedEntrypointName {
@@ -1087,6 +1087,7 @@ impl quickcheck::Arbitrary for ChainMetadata {
 }
 
 /// Add offset tracking inside a data structure.
+#[derive(Debug)]
 pub struct Cursor<T> {
     pub offset: usize,
     pub data:   T,
