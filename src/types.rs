@@ -11,7 +11,7 @@ use hash::Hash;
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "std")]
 use std::{cmp, convert, fmt, hash, iter, ops, str};
-#[cfg(test)]
+#[cfg(feature = "qc")]
 use quickcheck::*;
 
 /// Reexport of the `HashMap` from `hashbrown` with the default hasher set to
@@ -34,7 +34,7 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
         Amount{micro_ccd: quickcheck::Arbitrary::arbitrary(g)}
@@ -339,7 +339,7 @@ pub struct Timestamp {
     pub(crate) milliseconds: u64,
 }
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for Timestamp {
     fn arbitrary(g: &mut Gen) -> Timestamp {
         Timestamp{milliseconds: quickcheck::Arbitrary::arbitrary(g)}
@@ -610,7 +610,7 @@ impl fmt::Display for Duration {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
         //todo should it satisfy any properties, or are random bytes okay?
@@ -641,7 +641,7 @@ pub struct ContractAddress {
     pub subindex: u64,
 }
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for ContractAddress {
     fn arbitrary(g: &mut Gen) -> ContractAddress {
         ContractAddress{
@@ -671,7 +671,7 @@ pub enum Address {
 }
 
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for Address {
     fn arbitrary(g: &mut Gen) -> Address {
         if quickcheck::Arbitrary::arbitrary(g){
@@ -1069,13 +1069,13 @@ pub type SlotTime = Timestamp;
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "fuzz", derive(Arbitrary, Clone))]
-#[cfg_attr(test, derive(Clone))]
+#[cfg_attr(feature = "qc", derive(Clone))]
 #[derive(Debug)]
 pub struct ChainMetadata {
     pub slot_time: SlotTime,
 }
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for ChainMetadata {
     fn arbitrary(g: &mut Gen) -> ChainMetadata {
         ChainMetadata{slot_time: quickcheck::Arbitrary::arbitrary(g)}
@@ -1099,7 +1099,7 @@ pub struct Cursor<T> {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for AttributeTag {
     fn arbitrary(g: &mut Gen) -> AttributeTag {
         AttributeTag(quickcheck::Arbitrary::arbitrary(g))
@@ -1158,7 +1158,7 @@ pub struct Policy<Attributes> {
     pub items:             Attributes,
 }
 
-#[cfg(test)]
+#[cfg(feature = "qc")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         OwnedPolicy{

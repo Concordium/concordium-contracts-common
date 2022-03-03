@@ -13,6 +13,7 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 arbitrary = { version = "0.4", features = ["derive"], optional = true }
+quickcheck = { version = "1.0.3", optional = true}
 
 [dependencies.hashbrown]
 version = "0.11"
@@ -48,6 +49,8 @@ derive-serde = ["serde", "serde_json", "std", "base58check", "chrono"]
 
 fuzz = ["derive-serde", "arbitrary"]
 
+qc = [ "quickcheck" ]
+
 [lib]
 # Since we don't define an allocator in this crate, we can only produce an rlib
 # directly.
@@ -57,5 +60,3 @@ crate-type = ["rlib"]
 arbitrary = { version = "0.4", features = ["derive"] }
 rand = "=0.7"
 rand_pcg = "0.2.1"
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
