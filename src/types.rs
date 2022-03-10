@@ -34,6 +34,23 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+use std::sync::atomic::AtomicU8;
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+static ADDRESS_COUNTER: AtomicU8 = AtomicU8::new(0);
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+use getrandom::register_custom_getrandom;
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+fn custom_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
+    for byte in dest.iter_mut() {
+        *byte = ADDRESS_COUNTER.load(std::sync::atomic::Ordering::SeqCst);
+        ADDRESS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    Ok(())
+}
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+register_custom_getrandom!(custom_random);
+
 #[cfg(feature = "std")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
