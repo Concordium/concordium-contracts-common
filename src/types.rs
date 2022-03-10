@@ -349,7 +349,6 @@ impl quickcheck::Arbitrary for Timestamp {
         Timestamp {
             milliseconds: quickcheck::Arbitrary::arbitrary(g),
         }
-        //todo should additional requirements be added?
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -628,8 +627,6 @@ impl quickcheck::Arbitrary for AccountAddress {
         }
         AccountAddress(bytes)
     }
-
-    // todo leave shrinking empty?
 }
 
 impl convert::AsRef<[u8; 32]> for AccountAddress {
@@ -684,6 +681,7 @@ pub enum Address {
 #[cfg(feature = "std")]
 impl quickcheck::Arbitrary for Address {
     fn arbitrary(g: &mut Gen) -> Address {
+        //Randomly pick account or contract address.
         if quickcheck::Arbitrary::arbitrary(g) {
             Address::Account(quickcheck::Arbitrary::arbitrary(g))
         } else {
@@ -692,7 +690,6 @@ impl quickcheck::Arbitrary for Address {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        //todo can leave empty if they cannot be shrunk in a meaningful way
         match self {
             Address::Account(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Account)),
             Address::Contract(a) => {
@@ -1118,6 +1115,7 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "std")]
 impl quickcheck::Arbitrary for AttributeTag {
+    //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -1174,6 +1172,7 @@ pub struct Policy<Attributes> {
 
 #[cfg(feature = "std")]
 impl quickcheck::Arbitrary for OwnedPolicy {
+    //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         OwnedPolicy {
             identity_provider: quickcheck::Arbitrary::arbitrary(g),
@@ -1181,7 +1180,7 @@ impl quickcheck::Arbitrary for OwnedPolicy {
             valid_to:          quickcheck::Arbitrary::arbitrary(g),
             items:             quickcheck::Arbitrary::arbitrary(g),
         }
-        //todo maybe some restrictions on the generated values are needed
+        //todo some restrictions on the generated values are probably needed
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {

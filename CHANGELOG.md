@@ -5,6 +5,8 @@
 - Introduce Entrypoint and Parameter types, and their owned versions.
 - Add a new schema version for V1 smart contracts. 
   This adds schema for return values of init and receive functions, and removes the state schema.
+- Implement `quickcheck::arbitrary` for `Timestamp`, `AccountAddress`, `ContractAddress`, `Address`,
+  `ChainMetadata`, `AttributeTag`, and `OwnedPolicy`. 
 
 ## concordium-contracts-common 2.0.0 (2022-01-05)
 
