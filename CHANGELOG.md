@@ -7,6 +7,9 @@
   This adds schema for return values of init and receive functions, and removes the state schema.
 - Implement `quickcheck::arbitrary` for `Timestamp`, `AccountAddress`, `ContractAddress`, `Address`,
   `ChainMetadata`, `AttributeTag`, and `OwnedPolicy`. 
+- `get_chain_name`, `get_name_parts` have been moved from `OwnedReceiveName` to
+  `ReceiveName`. The method `get_func_name` of `OwnedReceiveName` became
+  `get_entrypoint_name` of `ReceiveName`.
 
 ## concordium-contracts-common 2.0.0 (2022-01-05)
 

@@ -189,7 +189,10 @@ impl Deserial for Duration {
 /// utf8-encoding of the string, then writing the bytes. Similar to `Vec<_>`.
 impl Serial for &str {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.as_bytes().to_vec().serial(out)
+        let bytes = self.as_bytes();
+        let len = bytes.len() as u32;
+        len.serial(out)?;
+        out.write_all(bytes)
     }
 }
 
@@ -339,7 +342,9 @@ impl<'a> Serial for ContractName<'a> {
 }
 
 impl Serial for OwnedContractName {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.as_ref().serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.as_contract_name().serial(out)
+    }
 }
 
 impl Deserial for OwnedContractName {
@@ -363,7 +368,9 @@ impl<'a> Serial for ReceiveName<'a> {
 }
 
 impl Serial for OwnedReceiveName {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.as_ref().serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.as_receive_name().serial(out)
+    }
 }
 
 impl Deserial for OwnedReceiveName {
