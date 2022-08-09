@@ -1075,7 +1075,31 @@ pub struct AttributeTag(pub u8);
 
 /// A borrowed attribute value. The slice will have at most 31 bytes.
 /// The meaning of the bytes is dependent on the type of the attribute.
-pub type AttributeValue<'a> = &'a [u8];
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct AttributeValue {
+    inner: [u8; 32],
+}
+
+impl AttributeValue {
+    pub fn new(data: &[u8]) -> Self {
+        let mut inner = [0u8; 32];
+        inner[1..=data.len()].copy_from_slice(data);
+        inner[0] = data.len() as u8;
+        Self {
+            inner,
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn new_unchecked(inner: [u8; 32]) -> Self {
+        Self{inner}
+    }
+}
+
+impl AsRef<[u8]> for AttributeValue {
+    fn as_ref(&self) -> &[u8] { &self.inner[1..=usize::from(self.inner[0])] }
+}
 
 /// An owned counterpart of `AttributeValue`, more convenient for testing.
 pub type OwnedAttributeValue = Vec<u8>;
