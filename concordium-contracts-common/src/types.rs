@@ -1333,7 +1333,9 @@ mod policy_json {
                                 serde_json::Value::String(value_string)
                                     if value_string.as_bytes().len() <= 31 =>
                                 {
-                                    items.push((tag, value_string.into_bytes()))
+                                    let value =
+                                        AttributeValue::new(&value_string.into_bytes()).unwrap(); // Safe as we know the length is valid.
+                                    items.push((tag, value))
                                 }
                                 _ => {
                                     return Err(serde::de::Error::custom(
