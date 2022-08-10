@@ -1125,6 +1125,9 @@ impl AttributeValue {
 
     /// Get the length of the attribute value.
     pub fn len(&self) -> usize { self.inner[0].into() }
+
+    /// Whether the attribute value has zero length.
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl AsRef<[u8]> for AttributeValue {
