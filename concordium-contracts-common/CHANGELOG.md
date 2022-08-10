@@ -2,6 +2,12 @@
 
 ## Unreleased changes
 
+- Rework attribute values types (breaking change)
+  - Change `AttributeValue` from a slice to a struct.
+  - Remove `OwnedAttributeValue` type.
+
+## concordium-contracts-common 3.1.0 (2022-08-04)
+
 - Extend schema type with `ULeb128`, `ILeb128`, `ByteList` and `ByteArray`.
   - `ULeb128` and `ILeb128` allow for integers of arbitrary size and are represented in JSON as a string containing the integer.
   - `ByteList` and `ByteArray` are byte specialized versions of `List` and `Array` and are represented in JSON as lowercase hex encoded strings.  
@@ -9,9 +15,9 @@
 - Use `schema::Type::ByteList` for `[u8]` implementation of `SchemaType`.
 - Introduce `HasSize` trait.
 - Implement `Seek` for `Cursor<T>` when `T` implements `HasSize`.
-- Rework attribute values types (breaking change)
-  - Change `AttributeValue` from a slice to a struct.
-  - Remove `OwnedAttributeValue` type.
+- Add traits `Serial`, `Deserial`, `SerialCtx` and `DeserialCtx`.
+- Add procedural macros for deriving `Serial` and `Deserial`.
+- Implement `std::error:Error` for error types, when `std` feature is enabled.
 
 ## concordium-contracts-common 3.0.0 (2022-05-17)
 
