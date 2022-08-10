@@ -1093,7 +1093,9 @@ impl AttributeValue {
 
     #[doc(hidden)]
     pub unsafe fn new_unchecked(inner: [u8; 32]) -> Self {
-        Self{inner}
+        Self {
+            inner,
+        }
     }
 }
 
