@@ -1066,6 +1066,24 @@ pub struct Cursor<T> {
     pub data:   T,
 }
 
+/// Errors that can occur when constructing a new [`AttributeValue`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum NewAttributeValueError {
+    TooLong(usize),
+}
+
+impl fmt::Display for NewAttributeValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NewAttributeValueError::TooLong(size) => write!(
+                f,
+                "Attribute values have a max length of 31. The slice given had length {}.",
+                size
+            ),
+        }
+    }
+}
+
 /// Tag of an attribute. See the module [attributes](./attributes/index.html)
 /// for the currently supported attributes.
 #[repr(transparent)]
@@ -1075,23 +1093,30 @@ pub struct AttributeTag(pub u8);
 
 /// A borrowed attribute value. The slice will have at most 31 bytes.
 /// The meaning of the bytes is dependent on the type of the attribute.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct AttributeValue {
     inner: [u8; 32],
 }
 
 impl AttributeValue {
-    pub fn new(data: &[u8]) -> Self {
+    /// Create a new [`Self`] from a slice of bytes. The slice must have a
+    /// length of *at most 31 bytes*.
+    pub fn new(data: &[u8]) -> Result<Self, NewAttributeValueError> {
+        if data.len() > 31 {
+            return Err(NewAttributeValueError::TooLong(data.len()));
+        }
         let mut inner = [0u8; 32];
         inner[1..=data.len()].copy_from_slice(data);
         inner[0] = data.len() as u8;
-        Self {
+        Ok(Self {
             inner,
-        }
+        })
     }
 
     #[doc(hidden)]
+    /// Create a new [`Self`] from a byte array. The first byte *must* tell
+    /// length of the attribute in the array.
     pub unsafe fn new_unchecked(inner: [u8; 32]) -> Self {
         Self {
             inner,
@@ -1540,5 +1565,26 @@ mod test {
             receive_name.as_receive_name().entrypoint_name(),
             EntrypointName::new_unchecked("receive")
         );
+    }
+
+    #[test]
+    fn test_attribute_value_valid_length() {
+        let data = [0u8; 1];
+        let res = AttributeValue::new(&data[..]);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_attribute_value_max_length() {
+        let data = [0u8; 31];
+        let res = AttributeValue::new(&data[..]);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_attribute_value_invalid_length() {
+        let data = [0u8; 35];
+        let res = AttributeValue::new(&data[..]);
+        assert_eq!(res, Err(NewAttributeValueError::TooLong(35)));
     }
 }
