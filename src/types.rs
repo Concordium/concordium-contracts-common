@@ -1096,7 +1096,7 @@ pub struct AttributeTag(pub u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct AttributeValue {
-    inner: [u8; 32],
+    pub(crate) inner: [u8; 32],
 }
 
 impl AttributeValue {
@@ -1122,20 +1122,83 @@ impl AttributeValue {
             inner,
         }
     }
+
+    /// Get the length of the attribute value.
+    pub fn len(&self) -> usize { self.inner[0].into() }
 }
 
 impl AsRef<[u8]> for AttributeValue {
     fn as_ref(&self) -> &[u8] { &self.inner[1..=usize::from(self.inner[0])] }
 }
 
-/// An owned counterpart of `AttributeValue`, more convenient for testing.
-pub type OwnedAttributeValue = Vec<u8>;
+/// Apply the given macro to each of the elements in the list
+/// For example, `repeat_macro!(println, "foo", "bar")` is equivalent to
+/// `println!("foo"); println!("bar").
+macro_rules! repeat_macro {
+    ($f:ident, $n:expr) => ($f!($n););
+    ($f:ident, $n:expr, $($ns:expr),*) => {
+        $f!($n);
+        repeat_macro!($f, $($ns),*);
+    };
+}
+
+/// Generate a [`From`] implementation from a bytearray of size `n` to an
+/// [`AttributeValue`] (also generates one for a referenced array). `n` *must*
+/// be between 0 and 31, both inclusive, otherwise the resulting code will
+/// panic.
+macro_rules! from_bytearray_to_attribute_value {
+    ($n:expr) => {
+        impl From<[u8; $n]> for AttributeValue {
+            fn from(data: [u8; $n]) -> Self { AttributeValue::new(&data[..]).unwrap() }
+        }
+
+        impl From<&[u8; $n]> for AttributeValue {
+            fn from(data: &[u8; $n]) -> Self { AttributeValue::new(&data[..]).unwrap() }
+        }
+    };
+}
+
+repeat_macro!(
+    from_bytearray_to_attribute_value,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+);
 
 /// A policy with a vector of attributes, fully allocated and owned.
 /// This is in contrast to a policy which is lazily read from a read source.
 /// The latter is useful for efficiency, this type is more useful for testing
 /// since the values are easier to construct.
-pub type OwnedPolicy = Policy<Vec<(AttributeTag, OwnedAttributeValue)>>;
+pub type OwnedPolicy = Policy<Vec<(AttributeTag, AttributeValue)>>;
 
 /// Index of the identity provider on the chain.
 /// An identity provider with the given index will not be replaced,
