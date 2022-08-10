@@ -9,6 +9,9 @@
 - Use `schema::Type::ByteList` for `[u8]` implementation of `SchemaType`.
 - Introduce `HasSize` trait.
 - Implement `Seek` for `Cursor<T>` when `T` implements `HasSize`.
+- Rework attribute values types (breaking change)
+  - Change `AttributeValue` from a slice to a struct.
+  - Remove `OwnedAttributeValue` type.
 
 ## concordium-contracts-common 3.0.0 (2022-05-17)
 

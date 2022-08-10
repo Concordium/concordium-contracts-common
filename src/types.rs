@@ -1091,7 +1091,7 @@ impl fmt::Display for NewAttributeValueError {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
-/// A borrowed attribute value. The slice will have at most 31 bytes.
+/// An attribute value.
 /// The meaning of the bytes is dependent on the type of the attribute.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
