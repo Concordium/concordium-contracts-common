@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add `cursor_position` method to the `Seek` trait.
+
 ## concordium-contracts-common 3.1.0 (2022-08-04)
 
 - Extend schema type with `ULeb128`, `ILeb128`, `ByteList` and `ByteArray`.
