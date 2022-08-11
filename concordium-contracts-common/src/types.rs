@@ -1152,6 +1152,12 @@ impl AsRef<[u8]> for AttributeValue {
     fn as_ref(&self) -> &[u8] { &self.inner[1..=usize::from(self.inner[0])] }
 }
 
+impl convert::TryFrom<&[u8]> for AttributeValue {
+    type Error = NewAttributeValueError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> { Self::new(value) }
+}
+
 /// Apply the given macro to each of the elements in the list
 /// For example, `repeat_macro!(println, "foo", "bar")` is equivalent to
 /// `println!("foo"); println!("bar").
