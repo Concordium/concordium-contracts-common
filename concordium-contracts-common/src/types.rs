@@ -1081,6 +1081,9 @@ pub struct Cursor<T> {
     pub data:   T,
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for NewAttributeValueError {}
+
 /// Errors that can occur when constructing a new [`AttributeValue`].
 #[derive(Debug, PartialEq, Eq)]
 pub enum NewAttributeValueError {
@@ -1164,6 +1167,10 @@ macro_rules! repeat_macro {
 /// [`AttributeValue`] (also generates one for a referenced array). `n` *must*
 /// be between 0 and 31, both inclusive, otherwise the resulting code will
 /// panic.
+///
+/// The implementation for references of byte arrays are need to ease the use of
+/// literals. Specifically, it allows you to write `b"abc".into()` instead of
+/// `(*b"abc").into()`.
 macro_rules! from_bytearray_to_attribute_value {
     ($n:expr) => {
         impl From<[u8; $n]> for AttributeValue {

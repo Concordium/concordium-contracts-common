@@ -982,8 +982,8 @@ impl Deserial for AttributeTag {
 
 impl Serial for AttributeValue {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        out.write_all(&self.inner[..self.len() + 1]) // Writes the length (u8) +
-                                                     // all the values.
+        out.write_all(&self.inner[..=self.len()]) // Writes the length (u8) +
+                                                  // all the values.
     }
 }
 
@@ -995,7 +995,7 @@ impl Deserial for AttributeValue {
         if len > 31 {
             return Err(ParseError::default());
         }
-        source.read_exact(&mut buf[1..len as usize + 1])?;
+        source.read_exact(&mut buf[1..=len as usize])?;
         Ok(unsafe { AttributeValue::new_unchecked(buf) })
     }
 }
