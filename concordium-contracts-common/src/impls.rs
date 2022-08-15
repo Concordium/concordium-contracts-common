@@ -1114,6 +1114,9 @@ impl<T: HasSize> Seek for Cursor<T> {
             }
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.offset as u32 }
 }
 
 impl Write for Cursor<&mut Vec<u8>> {
