@@ -51,6 +51,16 @@ pub struct ModuleV1 {
     pub contracts: BTreeMap<String, ContractV1>,
 }
 
+/// Contains all the contract schemas for a smart contract module V1 with a V2
+/// schema.
+///
+/// Older versions of smart contracts might have this embedded in the custom
+/// section labelled `concordium-schema-v2`.
+#[derive(Debug, Clone)]
+pub struct ModuleV2 {
+    pub contracts: BTreeMap<String, ContractV2>,
+}
+
 /// Represents the different schema versions.
 ///
 /// The serialization of this type includes the versioning information. The
@@ -65,6 +75,8 @@ pub enum VersionedModuleSchema {
     V0(ModuleV0),
     /// Version 1 schema, only supported by V1 smart contracts.
     V1(ModuleV1),
+    /// Version 2 schema, only supported by V1 smart contracts.
+    V2(ModuleV2),
 }
 
 /// Describes all the schemas of a V0 smart contract.
@@ -80,13 +92,22 @@ pub struct ContractV0 {
 #[derive(Debug, Default, Clone)]
 /// The [Default] instance produces an empty schema.
 pub struct ContractV1 {
-    pub init:    Option<Function>,
-    pub receive: BTreeMap<String, Function>,
+    pub init:    Option<FunctionV1>,
+    pub receive: BTreeMap<String, FunctionV1>,
 }
 
-/// Describes the schema of an init or a receive function for V1 contracts.
+/// Describes all the schemas of a V1 smart contract with a V2 schema.
+#[derive(Debug, Default, Clone)]
+/// The [Default] instance produces an empty schema.
+pub struct ContractV2 {
+    pub init:    Option<FunctionV2>,
+    pub receive: BTreeMap<String, FunctionV2>,
+}
+
+/// Describes the schema of an init or a receive function for V1 contracts with
+/// V1 schemas.
 #[derive(Debug, Clone)]
-pub enum Function {
+pub enum FunctionV1 {
     Parameter(Type),
     ReturnValue(Type),
     Both {
@@ -95,13 +116,13 @@ pub enum Function {
     },
 }
 
-impl Function {
+impl FunctionV1 {
     /// Extract the parameter schema if it exists.
     pub fn parameter(&self) -> Option<&Type> {
         match self {
-            Function::Parameter(ty) => Some(ty),
-            Function::ReturnValue(_) => None,
-            Function::Both {
+            FunctionV1::Parameter(ty) => Some(ty),
+            FunctionV1::ReturnValue(_) => None,
+            FunctionV1::Both {
                 parameter,
                 ..
             } => Some(parameter),
@@ -111,12 +132,102 @@ impl Function {
     /// Extract the return value schema if it exists.
     pub fn return_value(&self) -> Option<&Type> {
         match self {
-            Function::Parameter(_) => None,
-            Function::ReturnValue(rv) => Some(rv),
-            Function::Both {
+            FunctionV1::Parameter(_) => None,
+            FunctionV1::ReturnValue(rv) => Some(rv),
+            FunctionV1::Both {
                 return_value,
                 ..
             } => Some(return_value),
+        }
+    }
+}
+
+/// Describes the schema of an init or a receive function for V1 contracts with
+/// V2 schemas. Differs from [`FunctionV1`] in that a schema for the error can
+/// be included.
+#[derive(Debug, Clone)]
+pub enum FunctionV2 {
+    Param(Type),
+    /// Rv is short for Return value.
+    Rv(Type),
+    ParamRv {
+        parameter:    Type,
+        return_value: Type,
+    },
+    Error(Type),
+    ParamError {
+        parameter: Type,
+        error:     Type,
+    },
+    RvError {
+        return_value: Type,
+        error:        Type,
+    },
+    ParamRvError {
+        parameter:    Type,
+        return_value: Type,
+        error:        Type,
+    },
+}
+
+impl FunctionV2 {
+    /// Extract the parameter schema if it exists.
+    pub fn parameter(&self) -> Option<&Type> {
+        match self {
+            FunctionV2::Param(ty) => Some(ty),
+            FunctionV2::ParamRv {
+                parameter,
+                ..
+            } => Some(parameter),
+            FunctionV2::ParamError {
+                parameter,
+                ..
+            } => Some(parameter),
+            FunctionV2::ParamRvError {
+                parameter,
+                ..
+            } => Some(parameter),
+            _ => None,
+        }
+    }
+
+    /// Extract the return value schema if it exists.
+    pub fn return_value(&self) -> Option<&Type> {
+        match self {
+            FunctionV2::Rv(rv) => Some(rv),
+            FunctionV2::ParamRv {
+                return_value,
+                ..
+            } => Some(return_value),
+            FunctionV2::RvError {
+                return_value,
+                ..
+            } => Some(return_value),
+            FunctionV2::ParamRvError {
+                return_value,
+                ..
+            } => Some(return_value),
+            _ => None,
+        }
+    }
+
+    /// Extract the error schema if it exists.
+    pub fn error(&self) -> Option<&Type> {
+        match self {
+            FunctionV2::Error(error) => Some(error),
+            FunctionV2::ParamError {
+                error,
+                ..
+            } => Some(error),
+            FunctionV2::RvError {
+                error,
+                ..
+            } => Some(error),
+            FunctionV2::ParamRvError {
+                error,
+                ..
+            } => Some(error),
+            _ => None,
         }
     }
 }
@@ -397,6 +508,13 @@ impl Serial for ModuleV1 {
     }
 }
 
+impl Serial for ModuleV2 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.contracts.serial(out)?;
+        Ok(())
+    }
+}
+
 impl Serial for VersionedModuleSchema {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         // Prefix for versioned module schema, used to distinquish from the unversioned.
@@ -408,6 +526,10 @@ impl Serial for VersionedModuleSchema {
             }
             VersionedModuleSchema::V1(module) => {
                 out.write_u8(1)?;
+                module.serial(out)?;
+            }
+            VersionedModuleSchema::V2(module) => {
+                out.write_u8(2)?;
                 module.serial(out)?;
             }
         }
@@ -435,6 +557,16 @@ impl Deserial for ModuleV1 {
     }
 }
 
+impl Deserial for ModuleV2 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let len: u32 = source.get()?;
+        let contracts = deserial_map_no_length_no_order_check(source, len as usize)?;
+        Ok(ModuleV2 {
+            contracts,
+        })
+    }
+}
+
 impl Deserial for VersionedModuleSchema {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         // First we ensure the prefix is correct.
@@ -452,6 +584,10 @@ impl Deserial for VersionedModuleSchema {
                 let module = source.get()?;
                 Ok(VersionedModuleSchema::V1(module))
             }
+            2 => {
+                let module = source.get()?;
+                Ok(VersionedModuleSchema::V2(module))
+            }
             _ => Err(ParseError {}),
         }
     }
@@ -467,6 +603,14 @@ impl Serial for ContractV0 {
 }
 
 impl Serial for ContractV1 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.init.serial(out)?;
+        self.receive.serial(out)?;
+        Ok(())
+    }
+}
+
+impl Serial for ContractV2 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.init.serial(out)?;
         self.receive.serial(out)?;
@@ -500,18 +644,30 @@ impl Deserial for ContractV1 {
     }
 }
 
-impl Serial for Function {
+impl Deserial for ContractV2 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let init = source.get()?;
+        let len: u32 = source.get()?;
+        let receive = deserial_map_no_length_no_order_check(source, len as usize)?;
+        Ok(ContractV2 {
+            init,
+            receive,
+        })
+    }
+}
+
+impl Serial for FunctionV1 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
-            Function::Parameter(parameter) => {
+            FunctionV1::Parameter(parameter) => {
                 out.write_u8(0)?;
                 parameter.serial(out)
             }
-            Function::ReturnValue(return_value) => {
+            FunctionV1::ReturnValue(return_value) => {
                 out.write_u8(1)?;
                 return_value.serial(out)
             }
-            Function::Both {
+            FunctionV1::Both {
                 parameter,
                 return_value,
             } => {
@@ -523,15 +679,97 @@ impl Serial for Function {
     }
 }
 
-impl Deserial for Function {
+impl Deserial for FunctionV1 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let idx = source.read_u8()?;
         match idx {
-            0 => Ok(Function::Parameter(source.get()?)),
-            1 => Ok(Function::ReturnValue(source.get()?)),
-            2 => Ok(Function::Both {
+            0 => Ok(FunctionV1::Parameter(source.get()?)),
+            1 => Ok(FunctionV1::ReturnValue(source.get()?)),
+            2 => Ok(FunctionV1::Both {
                 parameter:    source.get()?,
                 return_value: source.get()?,
+            }),
+            _ => Err(ParseError::default()),
+        }
+    }
+}
+
+impl Serial for FunctionV2 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            FunctionV2::Param(parameter) => {
+                out.write_u8(0)?;
+                parameter.serial(out)
+            }
+            FunctionV2::Rv(return_value) => {
+                out.write_u8(1)?;
+                return_value.serial(out)
+            }
+            FunctionV2::ParamRv {
+                parameter,
+                return_value,
+            } => {
+                out.write_u8(2)?;
+                parameter.serial(out)?;
+                return_value.serial(out)
+            }
+            FunctionV2::Error(error) => {
+                out.write_u8(3)?;
+                error.serial(out)
+            }
+            FunctionV2::ParamError {
+                parameter,
+                error,
+            } => {
+                out.write_u8(4)?;
+                parameter.serial(out)?;
+                error.serial(out)
+            }
+            FunctionV2::RvError {
+                return_value,
+                error,
+            } => {
+                out.write_u8(5)?;
+                return_value.serial(out)?;
+                error.serial(out)
+            }
+            FunctionV2::ParamRvError {
+                parameter,
+                return_value,
+                error,
+            } => {
+                out.write_u8(6)?;
+                parameter.serial(out)?;
+                return_value.serial(out)?;
+                error.serial(out)
+            }
+        }
+    }
+}
+
+impl Deserial for FunctionV2 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let idx = source.read_u8()?;
+        match idx {
+            0 => Ok(FunctionV2::Param(source.get()?)),
+            1 => Ok(FunctionV2::Rv(source.get()?)),
+            2 => Ok(FunctionV2::ParamRv {
+                parameter:    source.get()?,
+                return_value: source.get()?,
+            }),
+            3 => Ok(FunctionV2::Error(source.get()?)),
+            4 => Ok(FunctionV2::ParamError {
+                parameter: source.get()?,
+                error:     source.get()?,
+            }),
+            5 => Ok(FunctionV2::RvError {
+                return_value: source.get()?,
+                error:        source.get()?,
+            }),
+            6 => Ok(FunctionV2::ParamRvError {
+                parameter:    source.get()?,
+                return_value: source.get()?,
+                error:        source.get()?,
             }),
             _ => Err(ParseError::default()),
         }
