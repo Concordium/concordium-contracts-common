@@ -53,9 +53,6 @@ pub struct ModuleV1 {
 
 /// Contains all the contract schemas for a smart contract module V1 with a V2
 /// schema.
-///
-/// Older versions of smart contracts might have this embedded in the custom
-/// section labelled `concordium-schema-v2`.
 #[derive(Debug, Clone)]
 pub struct ModuleV2 {
     pub contracts: BTreeMap<String, ContractV2>,
