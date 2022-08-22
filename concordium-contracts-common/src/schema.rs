@@ -37,7 +37,7 @@ pub trait SchemaType {
 ///
 /// Older versions of smart contracts might have this embedded in the custom
 /// section labelled `concordium-schema-v1`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleV0 {
     pub contracts: BTreeMap<String, ContractV0>,
 }
@@ -46,14 +46,14 @@ pub struct ModuleV0 {
 ///
 /// Older versions of smart contracts might have this embedded in the custom
 /// section labelled `concordium-schema-v2`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleV1 {
     pub contracts: BTreeMap<String, ContractV1>,
 }
 
 /// Contains all the contract schemas for a smart contract module V1 with a V2
 /// schema.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleV2 {
     pub contracts: BTreeMap<String, ContractV2>,
 }
@@ -78,7 +78,7 @@ pub enum VersionedModuleSchema {
 
 /// Describes all the schemas of a V0 smart contract.
 /// The [Default] instance produces an empty schema.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ContractV0 {
     pub state:   Option<Type>,
     pub init:    Option<Type>,
@@ -86,7 +86,7 @@ pub struct ContractV0 {
 }
 
 /// Describes all the schemas of a V1 smart contract.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 /// The [Default] instance produces an empty schema.
 pub struct ContractV1 {
     pub init:    Option<FunctionV1>,
@@ -94,7 +94,7 @@ pub struct ContractV1 {
 }
 
 /// Describes all the schemas of a V1 smart contract with a V2 schema.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 /// The [Default] instance produces an empty schema.
 pub struct ContractV2 {
     pub init:    Option<FunctionV2>,
@@ -103,7 +103,7 @@ pub struct ContractV2 {
 
 /// Describes the schema of an init or a receive function for V1 contracts with
 /// V1 schemas.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionV1 {
     Parameter(Type),
     ReturnValue(Type),
@@ -142,7 +142,7 @@ impl FunctionV1 {
 /// Describes the schema of an init or a receive function for V1 contracts with
 /// V2 schemas. Differs from [`FunctionV1`] in that a schema for the error can
 /// be included.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionV2 {
     Param(Type),
     /// Rv is short for Return value.
@@ -1454,5 +1454,101 @@ mod tests {
             let res = from_bytes::<Type>(&to_bytes(&schema)).unwrap();
             assert_eq!(schema, res);
         }
+    }
+
+    /// Serialize and then deserialize the input.
+    fn serial_deserial<T: Serialize>(t: &T) -> ParseResult<T> { from_bytes::<T>(&to_bytes(t)) }
+
+    #[test]
+    fn test_function_v1_serial_deserial_is_id() {
+        let f1 = FunctionV1::Parameter(Type::String(SizeLength::U32));
+        let f2 = FunctionV1::ReturnValue(Type::U128);
+        let f3 = FunctionV1::Both {
+            parameter:    Type::Set(SizeLength::U8, Box::new(Type::ByteArray(10))),
+            return_value: Type::ILeb128(3),
+        };
+
+        assert_eq!(serial_deserial(&f1), Ok(f1));
+        assert_eq!(serial_deserial(&f2), Ok(f2));
+        assert_eq!(serial_deserial(&f3), Ok(f3));
+    }
+
+    #[test]
+    fn test_function_v2_serial_deserial_is_id() {
+        let f1 = FunctionV2::Param(Type::String(SizeLength::U32));
+        let f2 = FunctionV2::Rv(Type::U128);
+        let f3 = FunctionV2::ParamRv {
+            parameter:    Type::Set(SizeLength::U8, Box::new(Type::ByteArray(10))),
+            return_value: Type::ILeb128(3),
+        };
+        let f4 = FunctionV2::Error(Type::ByteList(SizeLength::U32));
+        let f5 = FunctionV2::ParamError {
+            parameter: Type::U8,
+            error:     Type::String(SizeLength::U8),
+        };
+        let f6 = FunctionV2::ParamRvError {
+            parameter:    Type::Set(SizeLength::U8, Box::new(Type::ByteArray(10))),
+            return_value: Type::ILeb128(3),
+            error:        Type::Bool,
+        };
+
+        assert_eq!(serial_deserial(&f1), Ok(f1));
+        assert_eq!(serial_deserial(&f2), Ok(f2));
+        assert_eq!(serial_deserial(&f3), Ok(f3));
+        assert_eq!(serial_deserial(&f4), Ok(f4));
+        assert_eq!(serial_deserial(&f5), Ok(f5));
+        assert_eq!(serial_deserial(&f6), Ok(f6));
+    }
+
+    #[test]
+    fn test_module_v0_serial_deserial_is_id() {
+        let m = ModuleV0 {
+            contracts: BTreeMap::from([("a".into(), ContractV0 {
+                init:    Some(Type::U8),
+                receive: BTreeMap::from([
+                    ("b".into(), Type::String(SizeLength::U32)),
+                    ("c".into(), Type::Bool),
+                ]),
+                state:   Some(Type::String(SizeLength::U64)),
+            })]),
+        };
+
+        assert_eq!(serial_deserial(&m), Ok(m));
+    }
+
+    #[test]
+    fn test_module_v1_serial_deserial_is_id() {
+        let m = ModuleV1 {
+            contracts: BTreeMap::from([("a".into(), ContractV1 {
+                init:    Some(FunctionV1::Parameter(Type::U8)),
+                receive: BTreeMap::from([
+                    ("b".into(), FunctionV1::ReturnValue(Type::String(SizeLength::U32))),
+                    ("c".into(), FunctionV1::Both {
+                        parameter:    Type::U8,
+                        return_value: Type::Bool,
+                    }),
+                ]),
+            })]),
+        };
+
+        assert_eq!(serial_deserial(&m), Ok(m));
+    }
+
+    #[test]
+    fn test_module_v2_serial_deserial_is_id() {
+        let m = ModuleV2 {
+            contracts: BTreeMap::from([("a".into(), ContractV2 {
+                init:    Some(FunctionV2::Error(Type::U8)),
+                receive: BTreeMap::from([
+                    ("b".into(), FunctionV2::Rv(Type::String(SizeLength::U32))),
+                    ("c".into(), FunctionV2::ParamError {
+                        parameter: Type::U8,
+                        error:     Type::Bool,
+                    }),
+                ]),
+            })]),
+        };
+
+        assert_eq!(serial_deserial(&m), Ok(m));
     }
 }
