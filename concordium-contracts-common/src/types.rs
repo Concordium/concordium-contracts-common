@@ -1352,7 +1352,11 @@ impl AttributeValue {
 #[cfg(feature = "std")]
 impl quickcheck::Arbitrary for AttributeValue {
     //todo it is not clear to me if random instances of these are useful in tests
-    fn arbitrary(g: &mut Gen) -> AttributeValue { AttributeValue { inner: [0u8;32].map(|_| quickcheck::Arbitrary::arbitrary(g)) } }
+    fn arbitrary(g: &mut Gen) -> AttributeValue {
+        AttributeValue {
+            inner: [0u8; 32].map(|_| quickcheck::Arbitrary::arbitrary(g)),
+        }
+    }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         // todo: implement a shinker if it makes sense
