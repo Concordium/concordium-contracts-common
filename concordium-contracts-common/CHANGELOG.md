@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Implement `quickcheck::Arbitrary` for `Timestamp`, `AccountAddress`, `ContractAddress`, `Address`,  `ChainMetadata`, `AttributeTag`, `AttributeValue` and `OwnedPolicy`.
+
 ## concordium-contracts-common 4.0.0 (2022-08-24)
 
 - Add type aliases for `ContractIndex` and `ContractSubIndex`.
