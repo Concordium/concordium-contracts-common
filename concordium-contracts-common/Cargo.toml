@@ -58,7 +58,7 @@ path = "../concordium-contracts-common-derive"
 version = "1"
 
 [features]
-default = ["std", "quickcheck"]
+default = ["std"]
 
 std = ["fnv/std"]
 quickcheck = ["getrandom", "dep:quickcheck"]
