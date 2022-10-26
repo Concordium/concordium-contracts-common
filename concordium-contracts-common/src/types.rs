@@ -8,7 +8,7 @@ use cmp::Ordering;
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
 #[cfg(feature = "quickcheck")]
-use quickcheck::{Gen, empty_shrinker};
+use quickcheck::{empty_shrinker, Gen};
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "derive-serde")]
@@ -43,7 +43,6 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
-
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
 use std::sync::atomic::AtomicU8;
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
@@ -75,7 +74,6 @@ impl quickcheck::Arbitrary for Amount {
         }))
     }
 }
-
 
 #[cfg(feature = "derive-serde")]
 impl SerdeSerialize for Amount {
