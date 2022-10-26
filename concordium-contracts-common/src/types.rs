@@ -11,9 +11,10 @@ use hash::Hash;
 use quickcheck::*;
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
+#[cfg(feature = "derive-serde")]
+pub use serde_impl::*;
 #[cfg(feature = "std")]
 use std::{cmp, convert, fmt, hash, iter, ops, str};
-
 /// Reexport of the `HashMap` from `hashbrown` with the default hasher set to
 /// the `fnv` hash function.
 pub type HashMap<K, V, S = fnv::FnvBuildHasher> = hashbrown::HashMap<K, V, S>;
@@ -21,6 +22,14 @@ pub type HashMap<K, V, S = fnv::FnvBuildHasher> = hashbrown::HashMap<K, V, S>;
 /// Reexport of the `HashSet` from `hashbrown` with the default hasher set to
 /// the `fnv` hash function.
 pub type HashSet<K, S = fnv::FnvBuildHasher> = hashbrown::HashSet<K, S>;
+
+/// Contract address index. A contract address consists of an index and a
+/// subindex. This type is for the index.
+pub type ContractIndex = u64;
+
+/// Contract address subindex. A contract address consists of an index and a
+/// subindex. This type is for the subindex.
+pub type ContractSubIndex = u64;
 
 /// Size of an account address when serialized in binary.
 /// NB: This is different from the Base58 representation.
@@ -112,6 +121,9 @@ impl fmt::Display for AmountParseError {
     }
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for AmountParseError {}
+
 /// Parse from string in CCD units. The input string must be of the form
 /// `n[.m]` where `n` and `m` are both digits. The notation `[.m]` indicates
 /// that that part is optional.
@@ -201,6 +213,10 @@ impl Amount {
             micro_ccd,
         }
     }
+
+    /// Get the amount in microCCD
+    #[inline(always)]
+    pub const fn micro_ccd(&self) -> u64 { self.micro_ccd }
 
     /// Create amount from a number of CCD
     #[inline(always)]
@@ -443,6 +459,9 @@ impl fmt::Display for ParseTimestampError {
 }
 
 #[cfg(feature = "derive-serde")]
+impl std::error::Error for ParseTimestampError {}
+
+#[cfg(feature = "derive-serde")]
 /// The FromStr parses the time according to RFC3339.
 impl str::FromStr for Timestamp {
     type Err = ParseTimestampError;
@@ -575,6 +594,9 @@ impl fmt::Display for ParseDurationError {
     }
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for ParseDurationError {}
+
 /// Parse a string containing a list of duration measures separated by
 /// whitespaces. A measure is a number followed by the unit (no whitespace
 /// between is allowed). Every measure is accumulated into a duration. The
@@ -654,11 +676,27 @@ impl convert::AsRef<[u8]> for AccountAddress {
     fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
+impl convert::AsMut<[u8; 32]> for AccountAddress {
+    fn as_mut(&mut self) -> &mut [u8; 32] { &mut self.0 }
+}
+
 impl AccountAddress {
     /// Check whether `self` is an alias of `other`. Two addresses are aliases
     /// if they identify the same account. This is defined to be when the
     /// addresses agree on the first 29 bytes.
     pub fn is_alias(&self, other: &AccountAddress) -> bool { self.0[0..29] == other.0[0..29] }
+
+    /// Get the `n-th` alias of an address. There are 2^24 possible aliases.
+    /// If the counter is `>= 2^24` then this function will return [`None`].
+    pub fn get_alias(&self, counter: u32) -> Option<Self> {
+        if counter < (1 << 24) {
+            let mut data = self.0;
+            data[29..].copy_from_slice(&counter.to_be_bytes()[1..]);
+            Some(Self(data))
+        } else {
+            None
+        }
+    }
 }
 
 /// Address of a contract.
@@ -666,8 +704,18 @@ impl AccountAddress {
 #[cfg_attr(feature = "derive-serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct ContractAddress {
-    pub index:    u64,
-    pub subindex: u64,
+    pub index:    ContractIndex,
+    pub subindex: ContractSubIndex,
+}
+
+impl ContractAddress {
+    /// Construct a new contract address from index and subindex.
+    pub fn new(index: ContractIndex, subindex: ContractSubIndex) -> Self {
+        Self {
+            index,
+            subindex,
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -693,12 +741,14 @@ impl quickcheck::Arbitrary for ContractAddress {
 #[cfg_attr(
     feature = "derive-serde",
     derive(SerdeSerialize, SerdeDeserialize),
-    serde(tag = "type", content = "address", rename_all = "lowercase")
+    serde(tag = "type", content = "address")
 )]
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[derive(Eq, Copy, Clone, Debug)]
 pub enum Address {
+    #[cfg_attr(feature = "derive-serde", serde(rename = "AddressAccount"))]
     Account(AccountAddress),
+    #[cfg_attr(feature = "derive-serde", serde(rename = "AddressContract"))]
     Contract(ContractAddress),
 }
 
@@ -721,6 +771,14 @@ impl quickcheck::Arbitrary for Address {
             }
         }
     }
+}
+
+impl From<AccountAddress> for Address {
+    fn from(address: AccountAddress) -> Address { Address::Account(address) }
+}
+
+impl From<ContractAddress> for Address {
+    fn from(address: ContractAddress) -> Address { Address::Contract(address) }
 }
 
 // This trait is implemented manually to produce fewer bytes in the generated
@@ -824,8 +882,17 @@ impl<'a> ContractName<'a> {
     }
 }
 
+impl<'a> From<ContractName<'a>> for &'a str {
+    fn from(n: ContractName<'a>) -> Self { n.0 }
+}
+
 /// A contract name (owned version). Expected format: "init_<contract_name>".
-#[derive(Eq, PartialEq, Debug, Hash)]
+#[derive(Eq, PartialEq, Debug, Hash, Clone, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "derive-serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct OwnedContractName(String);
 
 impl OwnedContractName {
@@ -845,6 +912,10 @@ impl OwnedContractName {
     /// Convert to ContractName by reference.
     #[inline(always)]
     pub fn as_contract_name(&self) -> ContractName { ContractName(self.0.as_str()) }
+}
+
+impl From<OwnedContractName> for String {
+    fn from(n: OwnedContractName) -> Self { n.0 }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -870,6 +941,15 @@ impl fmt::Display for NewContractNameError {
             ),
         }
     }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for NewContractNameError {}
+
+impl convert::TryFrom<String> for OwnedContractName {
+    type Error = NewContractNameError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> { OwnedContractName::new(value) }
 }
 
 /// A receive name. Expected format: "<contract_name>.<func_name>".
@@ -936,7 +1016,7 @@ impl<'a> ReceiveName<'a> {
 /// "<contract_name>.<func_name>". Most methods are available only on the
 /// [`ReceiveName`] type, the intention is to access those via the
 /// [`as_receive_name`](OwnedReceiveName::as_receive_name) method.
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "derive-serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[cfg_attr(feature = "derive-serde", serde(try_from = "String"))]
 pub struct OwnedReceiveName(String);
@@ -946,6 +1026,13 @@ impl convert::TryFrom<String> for OwnedReceiveName {
 
     #[inline(always)]
     fn try_from(value: String) -> Result<Self, Self::Error> { OwnedReceiveName::new(value) }
+}
+
+impl str::FromStr for OwnedReceiveName {
+    type Err = NewReceiveNameError;
+
+    #[inline(always)]
+    fn from_str(s: &str) -> Result<Self, Self::Err> { OwnedReceiveName::new(s.to_string()) }
 }
 
 impl OwnedReceiveName {
@@ -1145,6 +1232,9 @@ impl fmt::Display for NewReceiveNameError {
     }
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for NewReceiveNameError {}
+
 /// Time at the beginning of the current slot, in miliseconds since unix epoch.
 pub type SlotTime = Timestamp;
 
@@ -1182,6 +1272,27 @@ pub struct Cursor<T> {
     pub data:   T,
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for NewAttributeValueError {}
+
+/// Errors that can occur when constructing a new [`AttributeValue`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum NewAttributeValueError {
+    TooLong(usize),
+}
+
+impl fmt::Display for NewAttributeValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NewAttributeValueError::TooLong(size) => write!(
+                f,
+                "Attribute values have a max length of 31. The slice given had length {}.",
+                size
+            ),
+        }
+    }
+}
+
 /// Tag of an attribute. See the module [attributes](./attributes/index.html)
 /// for the currently supported attributes.
 #[repr(transparent)]
@@ -1199,18 +1310,138 @@ impl quickcheck::Arbitrary for AttributeTag {
     }
 }
 
-/// A borrowed attribute value. The slice will have at most 31 bytes.
+/// An attribute value.
 /// The meaning of the bytes is dependent on the type of the attribute.
-pub type AttributeValue<'a> = &'a [u8];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct AttributeValue {
+    pub(crate) inner: [u8; 32],
+}
 
-/// An owned counterpart of `AttributeValue`, more convenient for testing.
-pub type OwnedAttributeValue = Vec<u8>;
+impl AttributeValue {
+    /// Create a new [`Self`] from a slice of bytes. The slice must have a
+    /// length of *at most 31 bytes*.
+    pub fn new(data: &[u8]) -> Result<Self, NewAttributeValueError> {
+        if data.len() > 31 {
+            return Err(NewAttributeValueError::TooLong(data.len()));
+        }
+        let mut inner = [0u8; 32];
+        inner[1..=data.len()].copy_from_slice(data);
+        inner[0] = data.len() as u8;
+        Ok(Self {
+            inner,
+        })
+    }
+
+    #[doc(hidden)]
+    /// Create a new [`Self`] from a byte array. The first byte *must* tell
+    /// length of the attribute in the array.
+    pub unsafe fn new_unchecked(inner: [u8; 32]) -> Self {
+        Self {
+            inner,
+        }
+    }
+
+    /// Get the length of the attribute value.
+    pub fn len(&self) -> usize { self.inner[0].into() }
+
+    /// Whether the attribute value has zero length.
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
+}
+
+#[cfg(feature = "std")]
+impl quickcheck::Arbitrary for AttributeValue {
+    //todo it is not clear to me if random instances of these are useful in tests
+    fn arbitrary(g: &mut Gen) -> AttributeValue { AttributeValue { inner: [0u8;32].map(|_| quickcheck::Arbitrary::arbitrary(g)) } }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        // todo: implement a shinker if it makes sense
+        empty_shrinker()
+    }
+}
+
+impl AsRef<[u8]> for AttributeValue {
+    fn as_ref(&self) -> &[u8] { &self.inner[1..=usize::from(self.inner[0])] }
+}
+
+impl convert::TryFrom<&[u8]> for AttributeValue {
+    type Error = NewAttributeValueError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> { Self::new(value) }
+}
+
+/// Apply the given macro to each of the elements in the list
+/// For example, `repeat_macro!(println, "foo", "bar")` is equivalent to
+/// `println!("foo"); println!("bar").
+macro_rules! repeat_macro {
+    ($f:ident, $n:expr) => ($f!($n););
+    ($f:ident, $n:expr, $($ns:expr),*) => {
+        $f!($n);
+        repeat_macro!($f, $($ns),*);
+    };
+}
+
+/// Generate a [`From`] implementation from a bytearray of size `n` to an
+/// [`AttributeValue`] (also generates one for a referenced array). `n` *must*
+/// be between 0 and 31, both inclusive, otherwise the resulting code will
+/// panic.
+///
+/// The implementation for references of byte arrays are need to ease the use of
+/// literals. Specifically, it allows you to write `b"abc".into()` instead of
+/// `(*b"abc").into()`.
+macro_rules! from_bytearray_to_attribute_value {
+    ($n:expr) => {
+        impl From<[u8; $n]> for AttributeValue {
+            fn from(data: [u8; $n]) -> Self { AttributeValue::new(&data[..]).unwrap() }
+        }
+
+        impl From<&[u8; $n]> for AttributeValue {
+            fn from(data: &[u8; $n]) -> Self { AttributeValue::new(&data[..]).unwrap() }
+        }
+    };
+}
+
+repeat_macro!(
+    from_bytearray_to_attribute_value,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+);
 
 /// A policy with a vector of attributes, fully allocated and owned.
 /// This is in contrast to a policy which is lazily read from a read source.
 /// The latter is useful for efficiency, this type is more useful for testing
 /// since the values are easier to construct.
-pub type OwnedPolicy = Policy<Vec<(AttributeTag, OwnedAttributeValue)>>;
+pub type OwnedPolicy = Policy<Vec<(AttributeTag, AttributeValue)>>;
 
 /// Index of the identity provider on the chain.
 /// An identity provider with the given index will not be replaced,
@@ -1357,7 +1588,9 @@ mod policy_json {
                                 serde_json::Value::String(value_string)
                                     if value_string.as_bytes().len() <= 31 =>
                                 {
-                                    items.push((tag, value_string.into_bytes()))
+                                    let value =
+                                        AttributeValue::new(&value_string.into_bytes()).unwrap(); // Safe as we know the length is valid.
+                                    items.push((tag, value))
                                 }
                                 _ => {
                                     return Err(serde::de::Error::custom(
@@ -1466,27 +1699,51 @@ pub struct ParseError {}
 /// of parsing from binary via the `Serial` instance.
 pub type ParseResult<A> = Result<A, ParseError>;
 
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("Parsing failed") }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ParseError {}
+
 #[cfg(feature = "derive-serde")]
 mod serde_impl {
     // FIXME: This is duplicated from crypto/id/types.
     use super::*;
     use base58check::*;
     use serde::{de, de::Visitor, Deserializer, Serializer};
-    use std::fmt;
+    use std::{fmt, num};
 
-    // Parse from string assuming base58 check encoding.
+    /// Error type for when parsing an account address.
+    #[derive(Debug, thiserror::Error)]
+    pub enum AccountAddressParseError {
+        /// Failed parsing the Base58Check encoding.
+        #[error("Invalid Base58Check encoding.")]
+        InvalidBase58Check(FromBase58CheckError),
+        /// Base58Check version byte is not 1.
+        #[error("Invalid version byte, expected 1, but got {0}.")]
+        InvalidBase58CheckVersion(u8),
+        /// The decoded bytes are not of length 32.
+        #[error("Invalid number of bytes, expected 32, but got {0}.")]
+        InvalidByteLength(usize),
+    }
+
+    /// Parse from string assuming base58check encoding.
     impl str::FromStr for AccountAddress {
-        type Err = ();
+        type Err = AccountAddressParseError;
 
         fn from_str(v: &str) -> Result<Self, Self::Err> {
-            let (version, body) = v.from_base58check().map_err(|_| ())?;
-            if version == 1 && body.len() == ACCOUNT_ADDRESS_SIZE {
-                let mut buf = [0u8; ACCOUNT_ADDRESS_SIZE];
-                buf.copy_from_slice(&body);
-                Ok(AccountAddress(buf))
-            } else {
-                Err(())
+            let (version, body) =
+                v.from_base58check().map_err(AccountAddressParseError::InvalidBase58Check)?;
+            if version != 1 {
+                return Err(AccountAddressParseError::InvalidBase58CheckVersion(version));
             }
+            if body.len() != ACCOUNT_ADDRESS_SIZE {
+                return Err(AccountAddressParseError::InvalidByteLength(body.len()));
+            }
+            let mut buf = [0u8; ACCOUNT_ADDRESS_SIZE];
+            buf.copy_from_slice(&body);
+            Ok(AccountAddress(buf))
         }
     }
 
@@ -1509,9 +1766,87 @@ mod serde_impl {
         }
     }
 
+    /// Error that can occur when parsing a [`ContractAddress`] from a string.
+    #[derive(Debug, thiserror::Error)]
+    pub enum ContractAddressParseError {
+        #[error("A contract address must start with '<'")]
+        MissingStartBracket,
+        #[error("A contract address must end with '>'")]
+        MissingEndBracket,
+        #[error("Failed to parse the index integer: {0}")]
+        ParseIndexIntError(num::ParseIntError),
+        #[error("Failed to parse the subindex integer: {0}")]
+        ParseSubIndexIntError(num::ParseIntError),
+        #[error("Missing comma separater between index and subindex")]
+        NoComma,
+    }
+
+    /// Parse a [`ContractAddress`] from a string of the format
+    /// "<index,subindex>" where index and subindex are [`ContractIndex`]
+    /// and [`ContractSubIndex`], respectively.
+    impl str::FromStr for ContractAddress {
+        type Err = ContractAddressParseError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            if !s.starts_with('<') {
+                return Err(ContractAddressParseError::MissingStartBracket);
+            }
+            if !s.ends_with('>') {
+                return Err(ContractAddressParseError::MissingEndBracket);
+            }
+            let trimmed = &s[1..s.len() - 1];
+            let (index, sub_index) =
+                trimmed.split_once(',').ok_or(ContractAddressParseError::NoComma)?;
+            let index =
+                u64::from_str(index).map_err(ContractAddressParseError::ParseIndexIntError)?;
+            let sub_index = u64::from_str(sub_index)
+                .map_err(ContractAddressParseError::ParseSubIndexIntError)?;
+            Ok(ContractAddress::new(index, sub_index))
+        }
+    }
+
     impl fmt::Display for ContractAddress {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "<{},{}>", self.index, self.subindex)
+        }
+    }
+
+    /// Error that can occur when parsing an [`Address`] from a string.
+    #[derive(Debug, thiserror::Error)]
+    pub enum AddressParseError {
+        #[error("Failed parsing a contract address: {0}")]
+        ContractAddressError(#[from] ContractAddressParseError),
+        #[error("Failed parsing an account address: {0}")]
+        AccountAddressError(#[from] AccountAddressParseError),
+    }
+
+    /// Parse a string into an [`Address`], by first trying to parse the string
+    /// as a contract address string. If this fails, because of missing
+    /// bracket, it will try parsing it as an account address string.
+    impl str::FromStr for Address {
+        type Err = AddressParseError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let contract_result = ContractAddress::from_str(s);
+            let address = match contract_result {
+                Ok(contract) => contract.into(),
+                Err(ContractAddressParseError::MissingStartBracket) => {
+                    AccountAddress::from_str(s)?.into()
+                }
+                Err(err) => return Err(err.into()),
+            };
+            Ok(address)
+        }
+    }
+
+    /// Display the [`Address`] using contract notation <index,subindex> for
+    /// contract addresses and display for account addresses.
+    impl fmt::Display for Address {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+            match self {
+                Address::Account(a) => a.fmt(f),
+                Address::Contract(c) => c.fmt(f),
+            }
         }
     }
 
@@ -1538,6 +1873,78 @@ mod serde_impl {
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
             v.parse::<AccountAddress>().map_err(|_| de::Error::custom("Wrong Base58 version."))
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+        use rand::{
+            distributions::{Distribution, Uniform},
+            Rng,
+        };
+
+        #[test]
+        // test amount serialization is correct
+        fn amount_serialization() {
+            let mut rng = rand::thread_rng();
+            for _ in 0..1000 {
+                let micro_ccd = Amount::from_micro_ccd(rng.gen::<u64>());
+                let s = micro_ccd.to_string();
+                let parsed = s.parse::<Amount>();
+                assert_eq!(Ok(micro_ccd), parsed, "Parsed amount differs from expected amount.");
+            }
+
+            assert_eq!(
+                "0.".parse::<Amount>(),
+                Err(AmountParseError::ExpectedMore),
+                "There must be at least one digit after dot."
+            );
+            assert_eq!(
+                "0.1234567".parse::<Amount>(),
+                Err(AmountParseError::AtMostSixDecimals),
+                "There can be at most 6 digits after dot."
+            );
+            assert_eq!(
+                "0.000000000".parse::<Amount>(),
+                Err(AmountParseError::AtMostSixDecimals),
+                "There can be at most 6 digits after dot."
+            );
+            assert_eq!(
+                "00.1234".parse::<Amount>(),
+                Err(AmountParseError::ExpectedDot),
+                "There can be at most one leading 0."
+            );
+            assert_eq!(
+                "01.1234".parse::<Amount>(),
+                Err(AmountParseError::ExpectedDot),
+                "Leading zero must be followed by a dot."
+            );
+            assert_eq!(
+                "0.1234".parse::<Amount>(),
+                Ok(Amount::from_micro_ccd(123400u64)),
+                "Leading zero is OK."
+            );
+            assert_eq!(
+                "0.0".parse::<Amount>(),
+                Ok(Amount::from_micro_ccd(0)),
+                "Leading zero and zero after dot is OK."
+            );
+            assert_eq!(
+                ".0".parse::<Amount>(),
+                Err(AmountParseError::ExpectedDigit),
+                "There should be at least one digit before a dot."
+            );
+            assert_eq!(
+                "13".parse::<Amount>(),
+                Ok(Amount::from_micro_ccd(13000000)),
+                "No dot is needed."
+            );
+            assert_eq!(
+                "".parse::<Amount>(),
+                Err(AmountParseError::ExpectedMore),
+                "Empty string is not a valid amount."
+            );
         }
     }
 }
@@ -1670,5 +2077,26 @@ mod test {
             receive_name.as_receive_name().entrypoint_name(),
             EntrypointName::new_unchecked("receive")
         );
+    }
+
+    #[test]
+    fn test_attribute_value_valid_length() {
+        let data = [0u8; 1];
+        let res = AttributeValue::new(&data[..]);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_attribute_value_max_length() {
+        let data = [0u8; 31];
+        let res = AttributeValue::new(&data[..]);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_attribute_value_invalid_length() {
+        let data = [0u8; 35];
+        let res = AttributeValue::new(&data[..]);
+        assert_eq!(res, Err(NewAttributeValueError::TooLong(35)));
     }
 }

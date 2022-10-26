@@ -1,0 +1,22 @@
+[package]
+name = "concordium-contracts-common-derive"
+authors = ["Concordium <developers@concordium.com>"]
+version = "1.0.1"
+edition = "2018"
+license = "MPL-2.0"
+description = "Procedural macros to ease writing for smart contracts on the Concordium blockchain."
+homepage = "https://github.com/Concordium/concordium-contracts-common"
+repository = "https://github.com/Concordium/concordium-contracts-common"
+readme = "README.md"
+
+[features]
+sdk = []
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = [ "full", "extra-traits" ] }
+quote = "1.0"
+proc-macro2 = "1.0"

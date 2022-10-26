@@ -1,14 +1,14 @@
-use crate::{constants::*, traits::*, types::*};
+use crate::{constants::*, schema, traits::*, types::*};
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, collections, string::String, vec::Vec};
 use collections::{BTreeMap, BTreeSet};
+use convert::TryFrom;
 #[cfg(not(feature = "std"))]
-use core::{hash, marker, mem::MaybeUninit, slice};
+use core::{convert, hash, marker, mem::MaybeUninit, slice};
 use hash::Hash;
 #[cfg(feature = "std")]
-use std::{collections, hash, marker, mem::MaybeUninit, slice};
-
+use std::{collections, convert, hash, marker, mem::MaybeUninit, slice};
 // Implementations of Serialize
 
 impl<X: Serial, Y: Serial> Serial for (X, Y) {
@@ -411,7 +411,7 @@ impl<'a> Serial for Parameter<'a> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         let len = self.0.len() as u16;
         len.serial(out)?;
-        out.write_all(&self.0)
+        out.write_all(self.0)
     }
 }
 
@@ -439,6 +439,178 @@ impl Deserial for ChainMetadata {
         Ok(Self {
             slot_time,
         })
+    }
+}
+
+impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_set_no_length(self, out)
+    }
+}
+
+impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        if ensure_ordered {
+            deserial_set_no_length(source, len)
+        } else {
+            deserial_set_no_length_no_order_check(source, len)
+        }
+    }
+}
+
+impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_map_no_length(self, out)
+    }
+}
+
+impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        if ensure_ordered {
+            deserial_map_no_length(source, len)
+        } else {
+            deserial_map_no_length_no_order_check(source, len)
+        }
+    }
+}
+
+/// Serialization for HashSet given a size_len.
+/// Values are not serialized in any particular order.
+impl<K: Serial> SerialCtx for HashSet<K> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashset_no_length(self, out)
+    }
+}
+
+/// Deserialization for HashSet given a size_len.
+/// Values are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
+impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashset_no_length(source, len)
+    }
+}
+
+/// Serialization for HashMap given a size_len.
+/// Keys are not serialized in any particular order.
+impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashmap_no_length(self, out)
+    }
+}
+
+/// Deserialization for HashMap given a size_len.
+/// Keys are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
+impl<K: Deserial + Eq + Hash, V: Deserial> DeserialCtx for HashMap<K, V> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashmap_no_length(source, len)
+    }
+}
+
+impl<T: Serial> SerialCtx for &[T] {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_vector_no_length(self, out)
+    }
+}
+
+impl<T: Serial> SerialCtx for Vec<T> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        self.as_slice().serial_ctx(size_len, out)
+    }
+}
+
+impl<T: Deserial> DeserialCtx for Vec<T> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_vector_no_length(source, len)
+    }
+}
+
+impl SerialCtx for &str {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_vector_no_length(&self.as_bytes().to_vec(), out)
+    }
+}
+
+impl SerialCtx for String {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        self.as_str().serial_ctx(size_len, out)
+    }
+}
+
+impl DeserialCtx for String {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        let bytes = deserial_vector_no_length(source, len)?;
+        let res = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
+        Ok(res)
     }
 }
 
@@ -808,6 +980,26 @@ impl Deserial for AttributeTag {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> { Ok(AttributeTag(source.get()?)) }
 }
 
+impl Serial for AttributeValue {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(&self.inner[..=self.len()]) // Writes the length (u8) +
+                                                  // all the values.
+    }
+}
+
+impl Deserial for AttributeValue {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut buf = [0u8; 32];
+        let len: u8 = source.get()?;
+        buf[0] = len;
+        if len > 31 {
+            return Err(ParseError::default());
+        }
+        source.read_exact(&mut buf[1..=len as usize])?;
+        Ok(unsafe { AttributeValue::new_unchecked(buf) })
+    }
+}
+
 impl Serial for OwnedPolicy {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.identity_provider.serial(out)?;
@@ -816,8 +1008,7 @@ impl Serial for OwnedPolicy {
         (self.items.len() as u16).serial(out)?;
         for item in self.items.iter() {
             item.0.serial(out)?;
-            (item.1.len() as u8).serial(out)?;
-            out.write_all(&item.1)?;
+            item.1.serial(out)?;
         }
         Ok(())
     }
@@ -830,17 +1021,10 @@ impl Deserial for OwnedPolicy {
         let valid_to = source.get()?;
         let len: u16 = source.get()?;
         let mut items = Vec::with_capacity(len as usize);
-        let mut buf = [0u8; 31];
         for _ in 0..len {
             let tag = AttributeTag::deserial(source)?;
-            let value_len: u8 = source.get()?;
-            if value_len > 31 {
-                // Should not happen because all attributes fit into 31 bytes.
-                return Err(ParseError {});
-            }
-            let value_len = usize::from(value_len);
-            source.read_exact(&mut buf[0..value_len])?;
-            items.push((tag, buf[0..value_len].to_vec()))
+            let value = AttributeValue::deserial(source)?;
+            items.push((tag, value))
         }
         Ok(Self {
             identity_provider,
@@ -874,6 +1058,65 @@ impl<T: AsRef<[u8]>> Read for Cursor<T> {
             Ok(0)
         }
     }
+}
+
+impl<T: AsRef<[u8]>> HasSize for T {
+    fn size(&self) -> u32 { self.as_ref().len() as u32 }
+}
+
+impl<T: AsRef<[u8]>> AsRef<[u8]> for Cursor<T> {
+    fn as_ref(&self) -> &[u8] { self.data.as_ref() }
+}
+
+impl<T: HasSize> Seek for Cursor<T> {
+    type Err = ();
+
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> {
+        use SeekFrom::*;
+        let end = self.data.size();
+        match pos {
+            Start(offset) => {
+                if offset <= end {
+                    self.offset = offset as usize;
+                    Ok(offset)
+                } else {
+                    Err(())
+                }
+            }
+            End(delta) => {
+                if delta > 0 {
+                    Err(()) // cannot seek beyond the end
+                } else {
+                    // due to two's complement representation of values we do not have to
+                    // distinguish on whether we go forward or backwards. Reinterpreting the bits
+                    // and adding unsigned values is the same as subtracting the
+                    // absolute value.
+                    let new_offset = end.wrapping_add(delta as u32);
+                    if new_offset <= end {
+                        self.offset = new_offset as usize;
+                        Ok(new_offset)
+                    } else {
+                        Err(())
+                    }
+                }
+            }
+            Current(delta) => {
+                // due to two's complement representation of values we do not have to
+                // distinguish on whether we go forward or backwards.
+                let current_offset = u32::try_from(self.offset).map_err(|_| ())?;
+                let new_offset: u32 = current_offset.wrapping_add(delta as u32);
+                if new_offset <= end {
+                    self.offset = new_offset as usize;
+                    Ok(new_offset)
+                } else {
+                    Err(())
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.offset as u32 }
 }
 
 impl Write for Cursor<&mut Vec<u8>> {
@@ -944,5 +1187,155 @@ mod test {
             xs2.unwrap(),
             "Serializing and then deserializing should return original value."
         );
+    }
+
+    #[test]
+    fn test_cursor_seek_start() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::Start(8));
+        let position = result.expect("Seek should succeed");
+
+        assert_eq!(position, 8, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_start_at_the_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::Start(10));
+        let position = result.expect("Seek should succeed");
+
+        assert_eq!(position, 10, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_start_fails_beyond_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::Start(11));
+        result.expect_err("Should have failed to seek beyond end of data");
+    }
+
+    #[test]
+    fn test_cursor_seek_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::End(-8));
+        let position = result.expect("Seek should succeed");
+
+        assert_eq!(position, 2, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_end_at_the_start() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::End(-10));
+        let position = result.expect("Seek should succeed");
+
+        assert_eq!(position, 0, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_end_at_the_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::End(0));
+        let position = result.expect("Seek should succeed");
+
+        assert_eq!(position, 10, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_end_fails_before_start() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::End(-11));
+        result.expect_err("Should have failed to seek before start of data");
+    }
+
+    #[test]
+    fn test_cursor_seek_end_fails_beyond_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::End(1));
+        result.expect_err("Should have failed to seek beyond end of data");
+    }
+
+    #[test]
+    fn test_cursor_seek_current_forward_twice() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        let result = cursor.seek(SeekFrom::Current(4));
+        let position = result.expect("Seek should succeed");
+        assert_eq!(position, 4, "Seek moved to the wrong position");
+
+        let result = cursor.seek(SeekFrom::Current(2));
+        let position = result.expect("Seek should succeed");
+        assert_eq!(position, 6, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_current_forward_backward() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        cursor.seek(SeekFrom::Current(4)).expect("Seek should succeed");
+
+        let result = cursor.seek(SeekFrom::Current(-2));
+        let position = result.expect("Seek should succeed");
+        assert_eq!(position, 2, "Seek moved to the wrong position");
+    }
+
+    #[test]
+    fn test_cursor_seek_current_forward_backward_fail_before_start() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        cursor.seek(SeekFrom::Current(4)).expect("Seek should succeed");
+
+        let result = cursor.seek(SeekFrom::Current(-5));
+        result.expect_err("Should have failed to seek before start of data");
+    }
+
+    #[test]
+    fn test_cursor_seek_current_forward_twice_fail_beyond_end() {
+        let bytes = [0u8; 10];
+        let mut cursor = Cursor::new(&bytes);
+
+        cursor.seek(SeekFrom::Current(4)).expect("Seek should succeed");
+
+        let result = cursor.seek(SeekFrom::Current(7));
+        result.expect_err("Should have failed to seek beyond end of data");
+    }
+
+    #[test]
+    fn test_owned_policy_serial_deserial_is_identity() {
+        let op = OwnedPolicy {
+            identity_provider: 1234,
+            created_at:        Timestamp::from_timestamp_millis(11),
+            valid_to:          Timestamp::from_timestamp_millis(999999),
+            items:             vec![
+                (attributes::COUNTRY_OF_RESIDENCE, b"DK".into()),
+                (attributes::ID_DOC_TYPE, b"A document type with 31 chars..".into()),
+            ],
+        };
+        let mut buf = Vec::new();
+        op.serial(&mut buf).unwrap();
+        let res = OwnedPolicy::deserial(&mut Cursor::new(buf)).unwrap();
+        assert_eq!(op.identity_provider, res.identity_provider, "identity provider didn't match");
+        assert_eq!(op.created_at, res.created_at, "created_at didn't match");
+        assert_eq!(op.valid_to, res.valid_to, "valid_to didn't match");
+        assert_eq!(op.items, res.items, "items didn't match");
     }
 }
