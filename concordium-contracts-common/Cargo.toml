@@ -58,9 +58,10 @@ path = "../concordium-contracts-common-derive"
 version = "1"
 
 [features]
-default = ["std"]
+default = ["std", "quickcheck"]
 
-std = ["fnv/std", "getrandom", "quickcheck"]
+std = ["fnv/std"]
+quickcheck = ["getrandom", "dep:quickcheck"]
 derive-serde = ["serde", "serde_json", "std", "base58check", "chrono", "num-bigint", "num-traits", "thiserror"]
 sdk = ["concordium-contracts-common-derive/sdk"]
 fuzz = ["derive-serde", "arbitrary"]

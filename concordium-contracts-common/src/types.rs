@@ -7,8 +7,8 @@ use cmp::Ordering;
 #[cfg(not(feature = "std"))]
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
-#[cfg(feature = "std")]
-use quickcheck::*;
+#[cfg(feature = "quickcheck")]
+use quickcheck::{Gen, empty_shrinker};
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "derive-serde")]
@@ -43,6 +43,7 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
+
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
 use std::sync::atomic::AtomicU8;
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
@@ -60,7 +61,7 @@ fn custom_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
 register_custom_getrandom!(custom_random);
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
         Amount {
@@ -74,6 +75,7 @@ impl quickcheck::Arbitrary for Amount {
         }))
     }
 }
+
 
 #[cfg(feature = "derive-serde")]
 impl SerdeSerialize for Amount {
@@ -376,7 +378,7 @@ pub struct Timestamp {
     pub(crate) milliseconds: u64,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for Timestamp {
     fn arbitrary(g: &mut Gen) -> Timestamp {
         Timestamp {
@@ -656,7 +658,7 @@ impl fmt::Display for Duration {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
         //todo should it satisfy any properties, or are random bytes okay?
@@ -718,7 +720,7 @@ impl ContractAddress {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for ContractAddress {
     fn arbitrary(g: &mut Gen) -> ContractAddress {
         ContractAddress {
@@ -752,7 +754,7 @@ pub enum Address {
     Contract(ContractAddress),
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for Address {
     fn arbitrary(g: &mut Gen) -> Address {
         //Randomly pick account or contract address.
@@ -1250,7 +1252,7 @@ pub struct ChainMetadata {
     pub slot_time: SlotTime,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for ChainMetadata {
     fn arbitrary(g: &mut Gen) -> ChainMetadata {
         ChainMetadata {
@@ -1300,7 +1302,7 @@ impl fmt::Display for NewAttributeValueError {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
     //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
@@ -1349,7 +1351,7 @@ impl AttributeValue {
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for AttributeValue {
     //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> AttributeValue {
@@ -1481,7 +1483,7 @@ pub struct Policy<Attributes> {
     pub items:             Attributes,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
