@@ -1,6 +1,6 @@
 [package]
 name = "concordium-contracts-common"
-version = "4.0.0"
+version = "4.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -37,17 +37,26 @@ version = "1.0"
 optional = true
 version = "0.4.19"
 
-[dependencies.base58check]
+[dependencies.bs58]
 optional = true
-version = "0.1"
+version = "0.4"
+features = ["check"]
 
 [dependencies.num-bigint]
 optional = true
 version = "0.4"
 
+[dependencies.num-integer]
+optional = true
+version = "0.1"
+
 [dependencies.num-traits]
 optional = true
 version = "0.2"
+
+[dependencies.rust_decimal]
+optional = true
+version = "1.26"
 
 [dependencies.thiserror]
 optional = true
@@ -62,7 +71,7 @@ default = ["std"]
 
 std = ["fnv/std"]
 quickcheck = ["getrandom", "dep:quickcheck"]
-derive-serde = ["serde", "serde_json", "std", "base58check", "chrono", "num-bigint", "num-traits", "thiserror"]
+derive-serde = ["serde", "serde_json", "std", "bs58", "chrono", "num-bigint", "num-traits", "num-integer", "rust_decimal", "thiserror"]
 sdk = ["concordium-contracts-common-derive/sdk"]
 fuzz = ["derive-serde", "arbitrary"]
 

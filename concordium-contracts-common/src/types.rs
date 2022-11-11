@@ -348,6 +348,26 @@ impl ops::RemAssign<u64> for Amount {
     fn rem_assign(&mut self, other: u64) { *self = *self % other; }
 }
 
+/// A reference to a smart contract module deployed on the chain.
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ModuleReference([u8; 32]);
+
+impl convert::AsRef<[u8; 32]> for ModuleReference {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8; 32] { &self.0 }
+}
+
+impl convert::From<[u8; 32]> for ModuleReference {
+    #[inline(always)]
+    fn from(bytes: [u8; 32]) -> Self { Self(bytes) }
+}
+
+impl convert::From<ModuleReference> for [u8; 32] {
+    #[inline(always)]
+    fn from(module: ModuleReference) -> Self { module.0 }
+}
+
 /// Timestamp represented as milliseconds since unix epoch.
 ///
 /// Timestamps from before January 1st 1970 at 00:00 are not supported.
@@ -504,7 +524,7 @@ pub struct Duration {
 impl Duration {
     /// Construct duration from milliseconds.
     #[inline(always)]
-    pub fn from_millis(milliseconds: u64) -> Self {
+    pub const fn from_millis(milliseconds: u64) -> Self {
         Self {
             milliseconds,
         }
@@ -512,19 +532,19 @@ impl Duration {
 
     /// Construct duration from seconds.
     #[inline(always)]
-    pub fn from_seconds(seconds: u64) -> Self { Self::from_millis(seconds * 1000) }
+    pub const fn from_seconds(seconds: u64) -> Self { Self::from_millis(seconds * 1000) }
 
     /// Construct duration from minutes.
     #[inline(always)]
-    pub fn from_minutes(minutes: u64) -> Self { Self::from_millis(minutes * 1000 * 60) }
+    pub const fn from_minutes(minutes: u64) -> Self { Self::from_millis(minutes * 1000 * 60) }
 
     /// Construct duration from hours.
     #[inline(always)]
-    pub fn from_hours(hours: u64) -> Self { Self::from_millis(hours * 1000 * 60 * 60) }
+    pub const fn from_hours(hours: u64) -> Self { Self::from_millis(hours * 1000 * 60 * 60) }
 
     /// Construct duration from days.
     #[inline(always)]
-    pub fn from_days(days: u64) -> Self { Self::from_millis(days * 1000 * 60 * 60 * 24) }
+    pub const fn from_days(days: u64) -> Self { Self::from_millis(days * 1000 * 60 * 60 * 24) }
 
     /// Get number of milliseconds in the duration.
     #[inline(always)]
@@ -1221,6 +1241,52 @@ impl std::error::Error for NewReceiveNameError {}
 /// Time at the beginning of the current slot, in miliseconds since unix epoch.
 pub type SlotTime = Timestamp;
 
+/// An exchange rate between two quantities. This is never 0, and the exchange
+/// rate should also never be infinite.
+#[cfg_attr(
+    feature = "derive-serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(try_from = "serde_impl::ExchangeRateJSON")
+)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExchangeRate {
+    numerator:   u64,
+    denominator: u64,
+}
+
+impl ExchangeRate {
+    /// Attempt to construct an exchange rate from a numerator and denominator.
+    /// The numerator and denominator must both be non-zero, and they have to be
+    /// in reduced form.
+    #[cfg(feature = "derive-serde")]
+    pub fn new(numerator: u64, denominator: u64) -> Option<Self> {
+        if numerator != 0 && denominator != 0 && num_integer::gcd(numerator, denominator) == 1 {
+            Some(Self {
+                numerator,
+                denominator,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Construct an unchecked exchange rate from a numerator and denominator.
+    /// The numerator and denominator must both be non-zero, and they have to be
+    /// in reduced form.
+    pub fn new_unchecked(numerator: u64, denominator: u64) -> Self {
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
+    /// Get the numerator. This is never 0.
+    pub fn numerator(&self) -> u64 { self.numerator }
+
+    /// Get the denominator. This is never 0.
+    pub fn denominator(&self) -> u64 { self.denominator }
+}
+
 /// Chain metadata accessible to both receive and init methods.
 #[cfg_attr(
     feature = "derive-serde",
@@ -1730,21 +1796,87 @@ impl std::error::Error for ParseError {}
 
 #[cfg(feature = "derive-serde")]
 mod serde_impl {
-    // FIXME: This is duplicated from crypto/id/types.
     use super::*;
-    use base58check::*;
     use serde::{de, de::Visitor, Deserializer, Serializer};
     use std::{fmt, num};
+
+    /// An error that may occur when converting from a string to an exchange
+    /// rate.
+    #[derive(Debug, thiserror::Error)]
+    pub enum ExchangeRateConversionError {
+        #[error("Could not convert from decimal: {0}")]
+        FromDecimal(#[from] rust_decimal::Error),
+        #[error("Exchange rate must be strictly positive.")]
+        NotStrictlyPositive,
+        #[error(
+            "Exchange rate is not representable, either it is too large or has too many digits."
+        )]
+        Unrepresentable,
+    }
+
+    impl str::FromStr for ExchangeRate {
+        type Err = ExchangeRateConversionError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            use convert::TryInto;
+
+            let mut decimal = rust_decimal::Decimal::from_str_exact(s)?;
+            decimal.normalize_assign();
+            if decimal.is_zero() || decimal.is_sign_negative() {
+                return Err(ExchangeRateConversionError::NotStrictlyPositive);
+            }
+            let mantissa = decimal.mantissa();
+            let scale = decimal.scale();
+            let denominator: u64 =
+                10u64.checked_pow(scale).ok_or(ExchangeRateConversionError::Unrepresentable)?;
+            let numerator: u64 =
+                mantissa.try_into().map_err(|_| ExchangeRateConversionError::Unrepresentable)?;
+            let g = num_integer::gcd(numerator, denominator);
+            Ok(ExchangeRate {
+                numerator:   numerator / g,
+                denominator: denominator / g,
+            })
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    pub enum ExchangeRateJSON {
+        String(String),
+        Num(f64),
+        Object {
+            numerator:   u64,
+            denominator: u64,
+        },
+    }
+
+    impl convert::TryFrom<ExchangeRateJSON> for ExchangeRate {
+        type Error = ExchangeRateConversionError;
+
+        fn try_from(value: ExchangeRateJSON) -> Result<Self, Self::Error> {
+            match value {
+                ExchangeRateJSON::String(value) => value.parse(),
+                ExchangeRateJSON::Num(v) => v.to_string().parse(),
+                ExchangeRateJSON::Object {
+                    numerator,
+                    denominator,
+                } => {
+                    let g = num_integer::gcd(numerator, denominator);
+                    Ok(ExchangeRate {
+                        numerator:   numerator / g,
+                        denominator: denominator / g,
+                    })
+                }
+            }
+        }
+    }
 
     /// Error type for when parsing an account address.
     #[derive(Debug, thiserror::Error)]
     pub enum AccountAddressParseError {
         /// Failed parsing the Base58Check encoding.
         #[error("Invalid Base58Check encoding.")]
-        InvalidBase58Check(FromBase58CheckError),
-        /// Base58Check version byte is not 1.
-        #[error("Invalid version byte, expected 1, but got {0}.")]
-        InvalidBase58CheckVersion(u8),
+        InvalidBase58Check(#[from] bs58::decode::Error),
         /// The decoded bytes are not of length 32.
         #[error("Invalid number of bytes, expected 32, but got {0}.")]
         InvalidByteLength(usize),
@@ -1755,23 +1887,25 @@ mod serde_impl {
         type Err = AccountAddressParseError;
 
         fn from_str(v: &str) -> Result<Self, Self::Err> {
-            let (version, body) =
-                v.from_base58check().map_err(AccountAddressParseError::InvalidBase58Check)?;
-            if version != 1 {
-                return Err(AccountAddressParseError::InvalidBase58CheckVersion(version));
+            // The buffer must be large enough to contain the 32 bytes for the address, 4
+            // bytes for a checksum and 1 byte for the version.
+            let mut buf = [0u8; ACCOUNT_ADDRESS_SIZE + 4 + 1];
+            let len = bs58::decode(v).with_check(Some(1)).into(&mut buf)?;
+            // Prepends 1 byte for the version
+            if len != 1 + ACCOUNT_ADDRESS_SIZE {
+                return Err(AccountAddressParseError::InvalidByteLength(len));
             }
-            if body.len() != ACCOUNT_ADDRESS_SIZE {
-                return Err(AccountAddressParseError::InvalidByteLength(body.len()));
-            }
-            let mut buf = [0u8; ACCOUNT_ADDRESS_SIZE];
-            buf.copy_from_slice(&body);
-            Ok(AccountAddress(buf))
+            // Copy out the 32 bytes for the account address. Ignoring 1 byte prepended
+            // for the version and the 4 bytes appended for the checksum.
+            let mut address_bytes = [0u8; ACCOUNT_ADDRESS_SIZE];
+            address_bytes.copy_from_slice(&buf[1..1 + ACCOUNT_ADDRESS_SIZE]);
+            Ok(AccountAddress(address_bytes))
         }
     }
 
     impl fmt::Display for AccountAddress {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.0.to_base58check(1))
+            write!(f, "{}", bs58::encode(&self.0).with_check_version(1).into_string())
         }
     }
 
@@ -1901,10 +2035,25 @@ mod serde_impl {
     #[cfg(test)]
     mod test {
         use super::*;
-        use rand::{
-            distributions::{Distribution, Uniform},
-            Rng,
-        };
+        use rand::Rng;
+
+        #[test]
+        fn test_account_address_to_string_parse_is_id() {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let mut address_bytes = [0u8; 32];
+
+            for _ in 0..1000 {
+                rng.fill(&mut address_bytes);
+                let address = AccountAddress(address_bytes);
+                let parsed: AccountAddress =
+                    address.to_string().parse().expect("Failed to parse address string.");
+                assert_eq!(
+                    parsed, address,
+                    "Parsed account address differs from the expected address."
+                );
+            }
+        }
 
         #[test]
         // test amount serialization is correct
@@ -1966,6 +2115,38 @@ mod serde_impl {
                 "".parse::<Amount>(),
                 Err(AmountParseError::ExpectedMore),
                 "Empty string is not a valid amount."
+            );
+        }
+
+        #[test]
+        fn test_exchange_rate_json() {
+            let data = ExchangeRate {
+                numerator:   1,
+                denominator: 100,
+            };
+            assert_eq!(
+                data,
+                serde_json::from_str("{\"numerator\": 1, \"denominator\": 100}").unwrap(),
+                "Exchange rate: case 1"
+            );
+            assert_eq!(
+                data,
+                serde_json::from_value(serde_json::from_str("0.01").unwrap()).unwrap(),
+                "Exchange rate: case 2"
+            );
+            let data2 = ExchangeRate {
+                numerator:   10,
+                denominator: 1,
+            };
+            assert_eq!(data2, serde_json::from_str("10").unwrap(), "Exchange rate: case 3");
+            let data3 = ExchangeRate {
+                numerator:   17,
+                denominator: 39,
+            };
+            assert_eq!(
+                data3,
+                serde_json::from_str(&serde_json::to_string(&data3).unwrap()).unwrap(),
+                "Exchange rate: case 4"
             );
         }
     }
