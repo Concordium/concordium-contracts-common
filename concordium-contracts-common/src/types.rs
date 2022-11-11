@@ -1285,8 +1285,13 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
-    //todo it is not clear to me if random instances of these are useful in tests
-    fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
+    // We generate only valid tags, that is indices into the `ATTRIBUTE_NAMES` array
+    // defined in `concordium-base/rust-src/id/src/types.rs`
+    fn arbitrary(g: &mut Gen) -> AttributeTag {
+        let v = Vec::from_iter(0..14);
+        let tag = g.choose(v.as_slice()).unwrap();
+        AttributeTag(*tag)
+    }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(quickcheck::Arbitrary::shrink(&self.0).map(AttributeTag))
@@ -1334,7 +1339,6 @@ impl AttributeValue {
 
 #[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for AttributeValue {
-    //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> AttributeValue {
         AttributeValue {
             inner: [0u8; 32].map(|_| quickcheck::Arbitrary::arbitrary(g)),
@@ -1465,16 +1469,46 @@ pub struct Policy<Attributes> {
 }
 
 #[cfg(feature = "quickcheck")]
+fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
+    g: &mut Gen,
+    size: usize,
+) -> Vec<(A, B)> {
+    use std::collections::BTreeMap;
+    let mut m: BTreeMap<A, B> = BTreeMap::new();
+    while m.len() < size {
+        let k = A::arbitrary(g);
+        let v = B::arbitrary(g);
+        m.insert(k, v);
+    }
+    m.into_iter().collect()
+}
+
+#[cfg(feature = "quickcheck")]
+const ATTRIBUTE_TAG_VEC_LENGTH: [u8; 15] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+#[cfg(feature = "quickcheck")]
+fn gen_range_u64(g: &mut Gen, range: core::ops::Range<u64>) -> u64 {
+    let i: u64 = quickcheck::Arbitrary::arbitrary(g);
+    i % (range.end - range.start) + range.start
+}
+
+#[cfg(feature = "quickcheck")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
+        // currently, we cannot generate more than 14 valid unique elements, due to the
+        // `AttributeValue` limitations safe to unwrap, we know it's non-empty
+        let size = g.choose(ATTRIBUTE_TAG_VEC_LENGTH.as_slice()).unwrap();
+        let created_at: Timestamp = quickcheck::Arbitrary::arbitrary(g);
+        // generate `valid_to` date so it's <= `created_at`
+        let valid_to_millis = gen_range_u64(g, created_at.timestamp_millis()..u64::MAX);
         OwnedPolicy {
             identity_provider: quickcheck::Arbitrary::arbitrary(g),
-            created_at:        quickcheck::Arbitrary::arbitrary(g),
-            valid_to:          quickcheck::Arbitrary::arbitrary(g),
-            items:             quickcheck::Arbitrary::arbitrary(g),
+            created_at,
+            valid_to: Timestamp::from_timestamp_millis(valid_to_millis),
+            // NOTE: it would be nicer to generate a vector [0..size] and suffle it
+            // but `Gen` doesn't expose the RNG
+            items: gen_no_dup_kv_vec(g, *size as usize),
         }
-        //todo some restrictions on the generated values are probably needed
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -1484,6 +1518,7 @@ impl quickcheck::Arbitrary for OwnedPolicy {
                 .zip(quickcheck::Arbitrary::shrink(&self.created_at).into_iter())
                 .zip(quickcheck::Arbitrary::shrink(&self.valid_to).into_iter())
                 .zip(quickcheck::Arbitrary::shrink(&self.items).into_iter())
+                .filter(|(((_, ca), vt), _)| vt <= ca)
                 .map(|(((ip, ca), vt), it)| OwnedPolicy {
                     identity_provider: ip,
                     created_at:        ca,
