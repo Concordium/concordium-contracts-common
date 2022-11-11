@@ -4,10 +4,12 @@ use alloc::{string::String, string::ToString, vec::Vec};
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
 use cmp::Ordering;
+#[cfg(feature = "concordium-quickcheck")]
+use core::iter::FromIterator;
 #[cfg(not(feature = "std"))]
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 use quickcheck::{empty_shrinker, Gen};
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
@@ -43,7 +45,7 @@ pub struct Amount {
     pub micro_ccd: u64,
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
         Amount {
@@ -379,7 +381,7 @@ pub struct Timestamp {
     pub(crate) milliseconds: u64,
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for Timestamp {
     fn arbitrary(g: &mut Gen) -> Timestamp {
         Timestamp {
@@ -659,7 +661,7 @@ impl fmt::Display for Duration {
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
         //todo should it satisfy any properties, or are random bytes okay?
@@ -721,7 +723,7 @@ impl ContractAddress {
     }
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for ContractAddress {
     fn arbitrary(g: &mut Gen) -> ContractAddress {
         ContractAddress {
@@ -755,7 +757,7 @@ pub enum Address {
     Contract(ContractAddress),
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for Address {
     fn arbitrary(g: &mut Gen) -> Address {
         //Randomly pick account or contract address.
@@ -1299,7 +1301,7 @@ pub struct ChainMetadata {
     pub slot_time: SlotTime,
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for ChainMetadata {
     fn arbitrary(g: &mut Gen) -> ChainMetadata {
         ChainMetadata {
@@ -1349,7 +1351,7 @@ impl fmt::Display for NewAttributeValueError {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct AttributeTag(pub u8);
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
     // We generate only valid tags, that is indices into the `ATTRIBUTE_NAMES` array
     // defined in `concordium-base/rust-src/id/src/types.rs`
@@ -1403,7 +1405,7 @@ impl AttributeValue {
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeValue {
     fn arbitrary(g: &mut Gen) -> AttributeValue {
         AttributeValue {
@@ -1534,7 +1536,7 @@ pub struct Policy<Attributes> {
     pub items:             Attributes,
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
     g: &mut Gen,
     size: usize,
@@ -1549,15 +1551,15 @@ fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
     m.into_iter().collect()
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 const ATTRIBUTE_TAG_VEC_LENGTH: [u8; 15] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 fn gen_range_u64(g: &mut Gen, range: core::ops::Range<u64>) -> u64 {
     let i: u64 = quickcheck::Arbitrary::arbitrary(g);
     i % (range.end - range.start) + range.start
 }
 
-#[cfg(feature = "quickcheck")]
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
