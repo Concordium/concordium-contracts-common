@@ -1565,7 +1565,7 @@ impl quickcheck::Arbitrary for OwnedPolicy {
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         // currently, we cannot generate more than 14 valid unique elements, due to the
         // `AttributeValue` limitations safe to unwrap, we know it's non-empty
-        let size = g.choose(ATTRIBUTE_TAG_VEC_LENGTH.as_slice()).unwrap();
+        let size = g.choose(&ATTRIBUTE_TAG_VEC_LENGTH[..]).unwrap();
         let created_at: Timestamp = quickcheck::Arbitrary::arbitrary(g);
         // generate `valid_to` date so it's <= `created_at`
         let valid_to_millis = gen_range_u64(g, created_at.timestamp_millis()..u64::MAX);
