@@ -656,7 +656,6 @@ pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
-        //todo should it satisfy any properties, or are random bytes okay?
         let mut bytes = [0u8; ACCOUNT_ADDRESS_SIZE];
         for byte in bytes.iter_mut() {
             *byte = quickcheck::Arbitrary::arbitrary(g);
