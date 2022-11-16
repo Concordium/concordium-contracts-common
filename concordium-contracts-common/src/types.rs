@@ -54,9 +54,7 @@ impl quickcheck::Arbitrary for Amount {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(quickcheck::Arbitrary::shrink(&self.micro_ccd).map(|mccd| Amount {
-            micro_ccd: mccd,
-        }))
+        Box::new(quickcheck::Arbitrary::shrink(&self.micro_ccd).map(Amount::from_micro_ccd))
     }
 }
 
