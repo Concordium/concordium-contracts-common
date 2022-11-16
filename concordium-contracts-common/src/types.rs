@@ -380,15 +380,11 @@ pub struct Timestamp {
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for Timestamp {
     fn arbitrary(g: &mut Gen) -> Timestamp {
-        Timestamp {
-            milliseconds: quickcheck::Arbitrary::arbitrary(g),
-        }
+        Timestamp::from_timestamp_millis(quickcheck::Arbitrary::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(quickcheck::Arbitrary::shrink(&self.milliseconds).map(|ms| Timestamp {
-            milliseconds: ms,
-        }))
+        Box::new(quickcheck::Arbitrary::shrink(&self.milliseconds).map(Timestamp::from_timestamp_millis))
     }
 }
 
