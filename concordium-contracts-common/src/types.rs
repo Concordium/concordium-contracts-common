@@ -1553,7 +1553,6 @@ fn gen_range_u64(g: &mut Gen, range: core::ops::Range<u64>) -> u64 {
 
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for OwnedPolicy {
-    //todo it is not clear to me if random instances of these are useful in tests
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         // currently, we cannot generate more than 14 valid unique elements, due to the
         // `AttributeValue` limitations safe to unwrap, we know it's non-empty
