@@ -48,9 +48,7 @@ pub struct Amount {
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for Amount {
     fn arbitrary(g: &mut Gen) -> Amount {
-        Amount {
-            micro_ccd: quickcheck::Arbitrary::arbitrary(g),
-        }
+        Amount::from_micro_ccd(quickcheck::Arbitrary::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
