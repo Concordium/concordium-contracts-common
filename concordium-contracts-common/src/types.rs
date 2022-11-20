@@ -4,9 +4,6 @@ use alloc::{string::String, string::ToString, vec::Vec};
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
 use cmp::Ordering;
-#[cfg(feature = "concordium-quickcheck")]
-use core::iter::FromIterator;
-use core::ops::Index;
 #[cfg(not(feature = "std"))]
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
