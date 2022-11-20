@@ -6,11 +6,12 @@ use arbitrary::Arbitrary;
 use cmp::Ordering;
 #[cfg(feature = "concordium-quickcheck")]
 use core::iter::FromIterator;
+use core::ops::Index;
 #[cfg(not(feature = "std"))]
 use core::{cmp, convert, fmt, hash, iter, ops, str};
 use hash::Hash;
 #[cfg(feature = "concordium-quickcheck")]
-use quickcheck::{empty_shrinker, Gen};
+use quickcheck::Gen;
 #[cfg(feature = "derive-serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "derive-serde")]
@@ -384,7 +385,9 @@ impl quickcheck::Arbitrary for Timestamp {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(quickcheck::Arbitrary::shrink(&self.milliseconds).map(Timestamp::from_timestamp_millis))
+        Box::new(
+            quickcheck::Arbitrary::shrink(&self.milliseconds).map(Timestamp::from_timestamp_millis),
+        )
     }
 }
 
@@ -656,11 +659,7 @@ pub struct AccountAddress(pub [u8; ACCOUNT_ADDRESS_SIZE]);
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AccountAddress {
     fn arbitrary(g: &mut Gen) -> AccountAddress {
-        let mut bytes = [0u8; ACCOUNT_ADDRESS_SIZE];
-        for byte in bytes.iter_mut() {
-            *byte = quickcheck::Arbitrary::arbitrary(g);
-        }
-        AccountAddress(bytes)
+        AccountAddress([0u8; ACCOUNT_ADDRESS_SIZE].map(|_| quickcheck::Arbitrary::arbitrary(g)))
     }
 }
 
@@ -724,12 +723,18 @@ impl quickcheck::Arbitrary for ContractAddress {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        let index_shrink = quickcheck::Arbitrary::shrink(&self.index);
-        let subindex_shrink = quickcheck::Arbitrary::shrink(&self.subindex);
-        Box::new(index_shrink.zip(subindex_shrink).map(|(i, si)| ContractAddress {
-            index:    i,
-            subindex: si,
-        }))
+        let index = self.index;
+        let subindex = self.subindex;
+        let iter = index
+            .shrink()
+            .map(move |i| {
+                subindex.shrink().map(move |si| ContractAddress {
+                    index:    i,
+                    subindex: si,
+                })
+            })
+            .flatten();
+        Box::new(iter)
     }
 }
 
@@ -1344,13 +1349,7 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
-    // We generate only valid tags, that is indices into the `ATTRIBUTE_NAMES` array
-    // defined in `concordium-base/rust-src/id/src/types.rs`
-    fn arbitrary(g: &mut Gen) -> AttributeTag {
-        let v = Vec::from_iter(0..14);
-        let tag = g.choose(v.as_slice()).unwrap();
-        AttributeTag(*tag)
-    }
+    fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(quickcheck::Arbitrary::shrink(&self.0).map(AttributeTag))
@@ -1397,16 +1396,38 @@ impl AttributeValue {
 }
 
 #[cfg(feature = "concordium-quickcheck")]
+fn gen_sized_vec<A: quickcheck::Arbitrary>(g: &mut Gen, size: usize) -> Vec<A> {
+    (0..size).into_iter().map(|_| quickcheck::Arbitrary::arbitrary(g)).collect()
+}
+
+#[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeValue {
     fn arbitrary(g: &mut Gen) -> AttributeValue {
+        let size = gen_range_u8(g, 0..32);
+        let mut inner: [u8; 32] = [0u8; 32];
+        let random_data = gen_sized_vec(g, size as usize);
+        inner[1..=size as usize].copy_from_slice(&random_data);
+        inner[0] = size;
         AttributeValue {
-            inner: [0u8; 32].map(|_| quickcheck::Arbitrary::arbitrary(g)),
+            inner,
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        // todo: implement a shinker if it makes sense
-        empty_shrinker()
+        let size = self.inner[0];
+        let data: &[u8] = &self.inner[1..=size as usize];
+        let vs = data.to_vec().shrink();
+        Box::new(
+            vs.map(|v| {
+                let mut inner = [0u8; 32];
+                inner[1..=v.len() as usize].copy_from_slice(&v);
+                inner[0] = v.len() as u8;
+                AttributeValue {
+                    inner,
+                }
+            })
+            .into_iter(),
+        )
     }
 }
 
@@ -1527,6 +1548,8 @@ pub struct Policy<Attributes> {
     pub items:             Attributes,
 }
 
+/// Generate a vector of random key-value pairs with no duplication
+/// The length of the resulting vector is <= `size`
 #[cfg(feature = "concordium-quickcheck")]
 fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
     g: &mut Gen,
@@ -1534,7 +1557,7 @@ fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
 ) -> Vec<(A, B)> {
     use std::collections::BTreeMap;
     let mut m: BTreeMap<A, B> = BTreeMap::new();
-    while m.len() < size {
+    for _ in 0..size {
         let k = A::arbitrary(g);
         let v = B::arbitrary(g);
         m.insert(k, v);
@@ -1542,20 +1565,40 @@ fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
     m.into_iter().collect()
 }
 
-#[cfg(feature = "concordium-quickcheck")]
-const ATTRIBUTE_TAG_VEC_LENGTH: [u8; 15] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+/// Generate a random `u64` value in the given range by shifting a random `u64`
+/// value using the `%` operator. The reason for doing it this way is that the
+/// range generation method is not exposed by QuickCheck's `Gen`.
 #[cfg(feature = "concordium-quickcheck")]
 fn gen_range_u64(g: &mut Gen, range: core::ops::Range<u64>) -> u64 {
     let i: u64 = quickcheck::Arbitrary::arbitrary(g);
     i % (range.end - range.start) + range.start
 }
 
+/// Generate a random `u8` value in the given range by shifting a random `u8`
+/// value using the `%` operator. The reason for doing it this way is that the
+/// range generation method is not exposed by QuickCheck's `Gen`.
+#[cfg(feature = "concordium-quickcheck")]
+fn gen_range_u8(g: &mut Gen, range: core::ops::Range<u8>) -> u8 {
+    let i: u8 = quickcheck::Arbitrary::arbitrary(g);
+    i % (range.end - range.start) + range.start
+}
+
+#[cfg(feature = "concordium-quickcheck")]
+fn valid_owned_policy(op: &OwnedPolicy) -> bool {
+    match op {
+        OwnedPolicy {
+            identity_provider: _,
+            created_at,
+            valid_to,
+            items: _,
+        } => created_at <= valid_to,
+    }
+}
+
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for OwnedPolicy {
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
-        // currently, we cannot generate more than 14 valid unique elements, due to the
-        // `AttributeValue` limitations safe to unwrap, we know it's non-empty
-        let size = g.choose(&ATTRIBUTE_TAG_VEC_LENGTH[..]).unwrap();
+        let size: u8 = quickcheck::Arbitrary::arbitrary(g);
         let created_at: Timestamp = quickcheck::Arbitrary::arbitrary(g);
         // generate `valid_to` date so it's <= `created_at`
         let valid_to_millis = gen_range_u64(g, created_at.timestamp_millis()..u64::MAX);
@@ -1563,27 +1606,36 @@ impl quickcheck::Arbitrary for OwnedPolicy {
             identity_provider: quickcheck::Arbitrary::arbitrary(g),
             created_at,
             valid_to: Timestamp::from_timestamp_millis(valid_to_millis),
-            // NOTE: it would be nicer to generate a vector [0..size] and suffle it
-            // but `Gen` doesn't expose the RNG
-            items: gen_no_dup_kv_vec(g, *size as usize),
+            items: gen_no_dup_kv_vec(g, size as usize),
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(
-            quickcheck::Arbitrary::shrink(&self.identity_provider)
-                .into_iter()
-                .zip(quickcheck::Arbitrary::shrink(&self.created_at).into_iter())
-                .zip(quickcheck::Arbitrary::shrink(&self.valid_to).into_iter())
-                .zip(quickcheck::Arbitrary::shrink(&self.items).into_iter())
-                .filter(|(((_, ca), vt), _)| vt <= ca)
-                .map(|(((ip, ca), vt), it)| OwnedPolicy {
-                    identity_provider: ip,
-                    created_at:        ca,
-                    valid_to:          vt,
-                    items:             it,
-                }),
-        )
+        let identity_provider = self.identity_provider;
+        let created_at = self.created_at.clone();
+        let valid_to = self.valid_to;
+        let items0 = self.items.clone();
+        let iter = identity_provider
+            .shrink()
+            .map(move |ip| {
+                let items = items0.clone();
+                created_at.shrink().into_iter().map(move |ca| {
+                    let items = items.clone();
+                    valid_to.shrink().into_iter().map(move |vt| {
+                        items.shrink().into_iter().map(move |it| OwnedPolicy {
+                            identity_provider: ip,
+                            created_at:        ca,
+                            valid_to:          vt,
+                            items:             it,
+                        })
+                    })
+                })
+            })
+            .flatten()
+            .flatten()
+            .flatten()
+            .filter(valid_owned_policy);
+        Box::new(iter)
     }
 }
 
