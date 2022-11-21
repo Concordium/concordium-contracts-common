@@ -1303,8 +1303,8 @@ impl quickcheck::Arbitrary for ChainMetadata {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(quickcheck::Arbitrary::shrink(&self.slot_time).map(|st| ChainMetadata {
-            slot_time: st,
+        Box::new(quickcheck::Arbitrary::shrink(&self.slot_time).map(|slot_time| ChainMetadata {
+            slot_time,
         }))
     }
 }
