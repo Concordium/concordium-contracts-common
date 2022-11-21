@@ -1348,7 +1348,7 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
-    // We choose not to consttain the generated attributes to currently defined in
+    // We choose not to constrain the generated attributes to currently defined in
     // `concordium-base/rust-src/id/src/types.rs`. The protocol supports more
     // attributes and it is reasonable to generate all values supported by the
     // protocol to ensure that the tested code is robust with respect to future
