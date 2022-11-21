@@ -1618,15 +1618,15 @@ impl quickcheck::Arbitrary for OwnedPolicy {
         let identity_provider = self.identity_provider;
         let created_at = self.created_at.clone();
         let valid_to = self.valid_to;
-        let items0 = self.items.clone();
+        let items = self.items.clone();
         let iter = identity_provider
             .shrink()
-            .map(move |ip| {
-                let items = items0.clone();
-                created_at.shrink().into_iter().map(move |ca| {
+            .flat_map(move |ip| {
+                let items = items.clone();
+                created_at.shrink().flat_map(move |ca| {
                     let items = items.clone();
-                    valid_to.shrink().into_iter().map(move |vt| {
-                        items.shrink().into_iter().map(move |it| OwnedPolicy {
+                    valid_to.shrink().flat_map(move |vt| {
+                        items.shrink().map(move |it| OwnedPolicy {
                             identity_provider: ip,
                             created_at:        ca,
                             valid_to:          vt,
@@ -1635,9 +1635,6 @@ impl quickcheck::Arbitrary for OwnedPolicy {
                     })
                 })
             })
-            .flatten()
-            .flatten()
-            .flatten()
             .filter(valid_owned_policy);
         Box::new(iter)
     }
