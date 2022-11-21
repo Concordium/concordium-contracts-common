@@ -762,6 +762,8 @@ impl quickcheck::Arbitrary for Address {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        // Note that shrinking an address does not change its type: account addresses
+        // remain account addresses, the same for contract addresses.
         match self {
             Address::Account(a) => Box::new(quickcheck::Arbitrary::shrink(a).map(Address::Account)),
             Address::Contract(a) => {
@@ -1346,6 +1348,11 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
+    // We choose not to consttain the generated attributes to currently defined in
+    // `concordium-base/rust-src/id/src/types.rs`. The protocol supports more
+    // attributes and it is reasonable to generate all values supported by the
+    // protocol to ensure that the tested code is robust with respect to future
+    // additions.
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -1597,7 +1604,7 @@ impl quickcheck::Arbitrary for OwnedPolicy {
     fn arbitrary(g: &mut Gen) -> OwnedPolicy {
         let size: u8 = quickcheck::Arbitrary::arbitrary(g);
         let created_at: Timestamp = quickcheck::Arbitrary::arbitrary(g);
-        // generate `valid_to` date so it's <= `created_at`
+        // generate `created_at` date so it's <= `valid_to`
         let valid_to_millis = gen_range_u64(g, created_at.timestamp_millis()..u64::MAX);
         OwnedPolicy {
             identity_provider: quickcheck::Arbitrary::arbitrary(g),
