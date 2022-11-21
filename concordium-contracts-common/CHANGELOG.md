@@ -3,7 +3,10 @@
 ## Unreleased changes
 
 - Implement `quickcheck::Arbitrary` for `Timestamp`, `AccountAddress`, `ContractAddress`, `Address`,  `ChainMetadata`, `AttributeTag`, `AttributeValue` and `OwnedPolicy`.
-- Add support for smart contract v3 schemas.
+
+## concordium-contracts-common 4.1.0 (2022-11-21)
+
+- Add support for smart contract V3 schemas.
 - Add type `ModuleReference` representing a module reference.
 - Implement `SchemaType` for `OwnedEntrypointName` and `OwnedParameter`.
 - Add type `ExchangeRate` representing an exchange rate between two quantities.
