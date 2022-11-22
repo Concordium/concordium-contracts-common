@@ -1348,11 +1348,11 @@ pub struct AttributeTag(pub u8);
 
 #[cfg(feature = "concordium-quickcheck")]
 impl quickcheck::Arbitrary for AttributeTag {
-    // We choose not to constrain the generated attributes to those currently defined in
-    // `concordium-base/rust-src/id/src/types.rs`. The protocol supports more
-    // attributes and it is reasonable to generate all values supported by the
-    // protocol to ensure that the tested code is robust with respect to future
-    // additions.
+    // We choose not to constrain the generated attributes to those currently
+    // defined in `concordium-base/rust-src/id/src/types.rs`. The protocol
+    // supports more attributes and it is reasonable to generate all values
+    // supported by the protocol to ensure that the tested code is robust with
+    // respect to future additions.
     fn arbitrary(g: &mut Gen) -> AttributeTag { AttributeTag(quickcheck::Arbitrary::arbitrary(g)) }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -1587,6 +1587,8 @@ fn gen_range_u8(g: &mut Gen, range: core::ops::Range<u8>) -> u8 {
     i % (range.end - range.start) + range.start
 }
 
+/// Check that the creation date `created_at` is less then or equal to the
+/// validity date `valid_to`.
 #[cfg(feature = "concordium-quickcheck")]
 fn valid_owned_policy(op: &OwnedPolicy) -> bool {
     match op {
