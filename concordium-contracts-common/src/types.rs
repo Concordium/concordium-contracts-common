@@ -1,6 +1,14 @@
 use crate::{constants, to_bytes, Serial};
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, string::ToString, vec::Vec};
+#[cfg(all(not(feature = "std"), feature = "concordium-quickcheck"))]
+use alloc::boxed::Box;
+#[cfg(all(feature = "std", feature = "concordium-quickcheck"))]
+use std::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "concordium-quickcheck"))]
+use alloc::collections::BTreeMap;
+#[cfg(all(feature = "std", feature = "concordium-quickcheck"))]
+use std::collections::BTreeMap;
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
 use cmp::Ordering;
@@ -1559,7 +1567,6 @@ fn gen_no_dup_kv_vec<A: quickcheck::Arbitrary + Ord, B: quickcheck::Arbitrary>(
     g: &mut Gen,
     size: usize,
 ) -> Vec<(A, B)> {
-    use std::collections::BTreeMap;
     let mut m: BTreeMap<A, B> = BTreeMap::new();
     for _ in 0..size {
         let k = A::arbitrary(g);
