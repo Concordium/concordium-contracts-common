@@ -2,6 +2,7 @@
 
 ## Unreleased changes
 
+- Derive `Serial` and `Deserial` for types with type parameters, by adding a type bound for each type parameter to implement the relevant trait.
 - Set minimum Rust version to 1.65.
 
 ## concordium-contracts-common-derive 2.0.0 (2023-05-08)
