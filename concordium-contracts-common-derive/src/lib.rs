@@ -204,8 +204,6 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let read_ident = format_ident!("__R", span = span);
 
-    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-
     let source_ident = Ident::new("________________source", Span::call_site());
     let root = get_root();
 
@@ -300,9 +298,28 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         }
         _ => unimplemented!("#[derive(Deserial)] is not implemented for union."),
     };
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    // Extend where clauses with Deserial predicate of each generic.
+    let where_clause_deserial: proc_macro2::TokenStream = ast
+        .generics
+        .type_params()
+        .map(|type_param| {
+            let type_param_ident = &type_param.ident;
+            quote! (#type_param_ident: #root::Deserial,)
+        })
+        .collect();
+
+    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
+        let predicates = &where_clauses.predicates;
+        quote!(#predicates, where_clause_deserial)
+    } else {
+        where_clause_deserial
+    };
+
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics #root::Deserial for #data_name #ty_generics #where_clauses {
+        impl #impl_generics #root::Deserial for #data_name #ty_generics where #where_clauses_tokens {
             fn deserial<#read_ident: #root::Read>(#source_ident: &mut #read_ident) -> #root::ParseResult<Self> {
                 #body_tokens
             }
@@ -376,8 +393,6 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let span = ast.span();
 
     let write_ident = format_ident!("W", span = span);
-
-    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
 
     let out_ident = format_ident!("out");
     let root = get_root();
@@ -473,9 +488,27 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         _ => unimplemented!("#[derive(Serial)] is not implemented for union."),
     };
 
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    // Extend where clauses with Serial predicate of each generic.
+    let where_clause_serial: proc_macro2::TokenStream = ast
+        .generics
+        .type_params()
+        .map(|type_param| {
+            let type_param_ident = &type_param.ident;
+            quote! (#type_param_ident: #root::Serial,)
+        })
+        .collect();
+
+    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
+        let predicates = &where_clauses.predicates;
+        quote!(#predicates, where_clause_serial)
+    } else {
+        where_clause_serial
+    };
+
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics #root::Serial for #data_name #ty_generics #where_clauses {
+        impl #impl_generics #root::Serial for #data_name #ty_generics where #where_clauses_tokens {
             fn serial<#write_ident: #root::Write>(&self, #out_ident: &mut #write_ident) -> Result<(), #write_ident::Err> {
                 #body
             }
