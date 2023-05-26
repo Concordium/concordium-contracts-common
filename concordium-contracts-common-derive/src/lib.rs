@@ -147,6 +147,31 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
     }
 }
 
+/// Find a 'state_parameter' attribute and return it as an identifier.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+fn find_state_parameter_attribute(
+    attributes: &[syn::Attribute],
+) -> syn::Result<Option<syn::Ident>> {
+    let value = match find_attribute_value(attributes, false, "state_parameter")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some(value.parse().map_err(|err| {
+            syn::Error::new(
+                err.span(),
+                "state_parameter attribute value is not a valid type parameter",
+            )
+        })?)),
+        _ => Err(syn::Error::new(
+            value.span(),
+            "state_parameter attribute value must be a string which describes valid type parameter",
+        )),
+    }
+}
+
 fn impl_deserial_field(
     f: &syn::Field,
     ident: &syn::Ident,
@@ -490,12 +515,17 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     // Extend where clauses with Serial predicate of each generic.
+    let state_parameter_option = find_state_parameter_attribute(&ast.attrs)?;
     let where_clause_serial: proc_macro2::TokenStream = ast
         .generics
         .type_params()
-        .map(|type_param| {
-            let type_param_ident = &type_param.ident;
-            quote! (#type_param_ident: #root::Serial,)
+        .filter_map(|type_param| match &state_parameter_option {
+            // Skip adding the predicate for the state_parameter.
+            Some(state_parameter) if state_parameter == &type_param.ident => None,
+            _ => {
+                let type_param_ident = &type_param.ident;
+                Some(quote! (#type_param_ident: #root::Serial,))
+            }
         })
         .collect();
 
