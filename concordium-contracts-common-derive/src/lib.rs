@@ -780,11 +780,11 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
 #[cfg(test)]
 mod test {
-
     use super::*;
 
+    /// Test parsing for bound attribute when using syntax for sharing.
     #[test]
-    fn test_parse_deserial_shared_bounds() {
+    fn test_parse_shared_bounds() {
         let ast: syn::ItemStruct = syn::parse_quote! {
             #[concordium(bound = "T: B")]
             struct MyStruct{}
@@ -793,10 +793,12 @@ mod test {
         let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
             .expect("Failed to parse container attributes");
 
-        let bounds = parsed.deserial_bounds();
-        assert!(bounds.is_some(), "Failed to add shared bound")
+        assert!(parsed.deserial_bounds().is_some(), "Failed to add shared bound");
+        assert!(parsed.serial_bounds().is_some(), "Failed to add shared bound");
     }
 
+    /// Test parsing for bound attribute when using syntax for Deserial
+    /// explicit.
     #[test]
     fn test_parse_deserial_explicit_bounds() {
         let ast: syn::ItemStruct = syn::parse_quote! {
@@ -807,24 +809,11 @@ mod test {
         let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
             .expect("Failed to parse container attributes");
 
-        let bounds = parsed.deserial_bounds();
-        assert!(bounds.is_some(), "Failed to add explicit bound")
+        assert!(parsed.deserial_bounds().is_some(), "Failed to add explicit bound");
+        assert!(parsed.serial_bounds().is_none(), "Unexpected bound added for Serial");
     }
 
-    #[test]
-    fn test_parse_serial_shared_bounds() {
-        let ast: syn::ItemStruct = syn::parse_quote! {
-            #[concordium(bound = "T: B")]
-            struct MyStruct{}
-        };
-
-        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
-            .expect("Failed to parse container attributes");
-
-        let bounds = parsed.serial_bounds();
-        assert!(bounds.is_some(), "Failed to add shared bound")
-    }
-
+    /// Test parsing for bound attribute when using syntax for Serial explicit.
     #[test]
     fn test_parse_serial_explicit_bounds() {
         let ast: syn::ItemStruct = syn::parse_quote! {
@@ -835,7 +824,23 @@ mod test {
         let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
             .expect("Failed to parse container attributes");
 
-        let bounds = parsed.serial_bounds();
-        assert!(bounds.is_some(), "Failed to add explicit bound")
+        assert!(parsed.serial_bounds().is_some(), "Failed to add explicit bound");
+        assert!(parsed.deserial_bounds().is_none(), "Unexpected bound added for Deserial");
+    }
+
+    /// Test parsing for bound attribute when using syntax for SchemaType
+    /// explicit.
+    #[test]
+    fn test_parse_schema_type_explicit_bounds() {
+        let ast: syn::ItemStruct = syn::parse_quote! {
+            #[concordium(bound(schema_type  = "T: B"))]
+            struct MyStruct{}
+        };
+
+        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
+            .expect("Failed to parse container attributes");
+
+        assert!(parsed.deserial_bounds().is_none(), "Unexpected bound added for Deserial");
+        assert!(parsed.serial_bounds().is_none(), "Unexpected bound added for Serial");
     }
 }
