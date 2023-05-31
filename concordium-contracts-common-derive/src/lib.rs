@@ -152,7 +152,7 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
 /// string.
 fn find_state_parameter_attribute(
     attributes: &[syn::Attribute],
-) -> syn::Result<Option<syn::Ident>> {
+) -> syn::Result<Option<syn::TypePath>> {
     let value = match find_attribute_value(attributes, false, "state_parameter")? {
         Some(v) => v,
         None => return Ok(None),
@@ -160,14 +160,11 @@ fn find_state_parameter_attribute(
 
     match value {
         syn::Lit::Str(value) => Ok(Some(value.parse().map_err(|err| {
-            syn::Error::new(
-                err.span(),
-                "state_parameter attribute value is not a valid type parameter",
-            )
+            syn::Error::new(err.span(), "state_parameter attribute value is not a valid type path")
         })?)),
         _ => Err(syn::Error::new(
             value.span(),
-            "state_parameter attribute value must be a string which describes valid type parameter",
+            "state_parameter attribute value must be a string which describes valid type path",
         )),
     }
 }
@@ -192,9 +189,9 @@ enum BoundAttribute {
 /// E.g. `bound(serial = "A : Serial", deserial = "A : Deserial")`
 #[derive(Debug)]
 struct SeparateBoundValue {
-    /// Bounds set for deserial.
+    /// Bounds set for Deserial.
     deserial: Option<BoundAttributeValue>,
-    /// Bounds set for serial.
+    /// Bounds set for Serial.
     serial:   Option<BoundAttributeValue>,
 }
 
@@ -205,7 +202,7 @@ struct ContainerAttributes {
     /// deserial = "..")` or `bound = ".."`.
     bounds:          Vec<BoundAttribute>,
     /// The state parameter attribute. `state_parameter = ".."`
-    state_parameter: Option<syn::Ident>,
+    state_parameter: Option<syn::TypePath>,
 }
 
 impl ContainerAttributes {
@@ -313,6 +310,8 @@ impl TryFrom<&syn::MetaList> for SeparateBoundValue {
                 } else {
                     deserial = Some(value);
                 };
+            } else if name_value.path.is_ident("schema_type") {
+                continue;
             } else {
                 return Err(syn::Error::new(
                     item.span(),
@@ -723,16 +722,22 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     {
         attribute_bounds.into_token_stream()
     } else {
+        let state_parameter_ident = container_attributes
+            .state_parameter
+            .as_ref()
+            .and_then(|type_path| type_path.path.get_ident());
         // Extend where clauses with Serial predicate of each generic.
         let where_clause_serial: proc_macro2::TokenStream = ast
             .generics
             .type_params()
-            .filter_map(|type_param| match &container_attributes.state_parameter {
-                // Skip adding the predicate for the state_parameter.
-                Some(state_parameter) if state_parameter == &type_param.ident => None,
-                _ => {
-                    let type_param_ident = &type_param.ident;
-                    Some(quote! (#type_param_ident: #root::Serial,))
+            .filter_map(|type_param| {
+                match state_parameter_ident {
+                    // Skip adding the predicate for the state_parameter.
+                    Some(state_parameter) if state_parameter == &type_param.ident => None,
+                    _ => {
+                        let type_param_ident = &type_param.ident;
+                        Some(quote! (#type_param_ident: #root::Serial,))
+                    }
                 }
             })
             .collect();
