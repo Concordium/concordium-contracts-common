@@ -17,7 +17,7 @@ const CONCORDIUM_ATTRIBUTE: &str = "concordium";
 const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
 /// A list of valid concordium attributes
-const VALID_CONCORDIUM_ATTRIBUTES: [&str; 1] = ["state_parameter"];
+const VALID_CONCORDIUM_ATTRIBUTES: [&str; 2] = ["state_parameter", "bound"];
 
 fn get_root() -> proc_macro2::TokenStream { quote!(concordium_std) }
 
@@ -169,6 +169,185 @@ fn find_state_parameter_attribute(
             value.span(),
             "state_parameter attribute value must be a string which describes valid type parameter",
         )),
+    }
+}
+
+/// The value of the bound attribute, e.g. "A: Serial, B: Deserial".
+type BoundAttributeValue = syn::punctuated::Punctuated<syn::WherePredicate, syn::token::Comma>;
+
+/// Bound attribute on some type.
+#[derive(Debug)]
+enum BoundAttribute {
+    /// Represents a bound shared across all of the derived traits.
+    /// E.g. the attribute: `bound = "A : Serial + Deserial"`
+    Shared(BoundAttributeValue),
+    /// Represents bounds explicitly set for each derived trait.
+    /// E.g. the attribute: `bound(serial = "A : Serial", deserial = "A :
+    /// Deserial")`
+    Separate(SeparateBoundValue),
+}
+
+/// Represents bounds explicitly set for each derived trait.
+///
+/// E.g. `bound(serial = "A : Serial", deserial = "A : Deserial")`
+#[derive(Debug)]
+struct SeparateBoundValue {
+    /// Bounds set for deserial.
+    deserial: Option<BoundAttributeValue>,
+    /// Bounds set for serial.
+    serial:   Option<BoundAttributeValue>,
+}
+
+/// Concordium attributes supported on containers.
+#[derive(Debug)]
+struct ContainerAttributes {
+    /// All of the `bound` attributes, either of the form `bound(serial = "..",
+    /// deserial = "..")` or `bound = ".."`.
+    bounds:          Vec<BoundAttribute>,
+    /// The state parameter attribute. `state_parameter = ".."`
+    state_parameter: Option<syn::Ident>,
+}
+
+impl ContainerAttributes {
+    /// Collect shared and explicit bounds set for the implementation of
+    /// `Deserial`. `None` meaning no bound attributes are provided.
+    fn deserial_bounds(&self) -> Option<BoundAttributeValue> {
+        let mut bounds: Option<BoundAttributeValue> = None;
+        for attribute in self.bounds.iter() {
+            if let BoundAttribute::Shared(bound)
+            | BoundAttribute::Separate(SeparateBoundValue {
+                deserial: Some(bound),
+                ..
+            }) = attribute
+            {
+                bounds.get_or_insert(BoundAttributeValue::new()).extend(bound.clone());
+            }
+        }
+        bounds
+    }
+
+    /// Collect shared and explicit bounds set for the implementation of
+    /// `Serial`. `None` meaning no bound attributes are provided.
+    fn serial_bounds(&self) -> Option<BoundAttributeValue> {
+        let mut bounds: Option<BoundAttributeValue> = None;
+        for attribute in self.bounds.iter() {
+            if let BoundAttribute::Shared(bound)
+            | BoundAttribute::Separate(SeparateBoundValue {
+                serial: Some(bound),
+                ..
+            }) = attribute
+            {
+                bounds.get_or_insert(BoundAttributeValue::new()).extend(bound.clone());
+            }
+        }
+        bounds
+    }
+}
+
+impl TryFrom<&[syn::Attribute]> for ContainerAttributes {
+    type Error = syn::Error;
+
+    fn try_from(attributes: &[syn::Attribute]) -> Result<Self, Self::Error> {
+        let metas = get_concordium_attributes(attributes, false)?;
+        // Collect and combine all errors if any.
+        let mut error_option: Option<syn::Error> = None;
+        let mut bounds = Vec::new();
+        for meta in metas.iter() {
+            if meta.path().is_ident("bound") {
+                match BoundAttribute::try_from(meta) {
+                    Err(new_err) => match error_option.as_mut() {
+                        Some(error) => error.combine(new_err),
+                        None => error_option = Some(new_err),
+                    },
+                    Ok(bound) => bounds.push(bound),
+                }
+            }
+        }
+
+        if let Some(err) = error_option {
+            Err(err)
+        } else {
+            Ok(ContainerAttributes {
+                bounds,
+                state_parameter: find_state_parameter_attribute(attributes)?,
+            })
+        }
+    }
+}
+
+impl TryFrom<&syn::MetaList> for SeparateBoundValue {
+    type Error = syn::Error;
+
+    fn try_from(list: &syn::MetaList) -> Result<Self, Self::Error> {
+        let items = &list.nested;
+        if items.is_empty() {
+            return Err(syn::Error::new(list.span(), "bound attribute cannot be empty"));
+        }
+        let mut deserial: Option<BoundAttributeValue> = None;
+        let mut serial: Option<BoundAttributeValue> = None;
+
+        for item in items {
+            let syn::NestedMeta::Meta(nested_meta) = item else {
+                        return Err(syn::Error::new(item.span(), "bound attribute list can only contain name value pairs"));
+                    };
+            let syn::Meta::NameValue(name_value) = nested_meta else {
+                return Err(syn::Error::new(nested_meta.span(), "bound attribute list must contain named values"))
+            };
+            if name_value.path.is_ident("serial") {
+                let syn::Lit::Str(lit_str) = &name_value.lit else {
+                    return Err(syn::Error::new(name_value.lit.span(), "bound attribute must be a string literal"))
+                };
+                let value = lit_str.parse_with(BoundAttributeValue::parse_terminated)?;
+                if let Some(serial_value) = serial.as_mut() {
+                    serial_value.extend(value)
+                } else {
+                    serial = Some(value);
+                };
+            } else if name_value.path.is_ident("deserial") {
+                let syn::Lit::Str(lit_str) = &name_value.lit else {
+                            return Err(syn::Error::new(name_value.lit.span(), "bound attribute must be a string literal"))
+                        };
+                let value = lit_str.parse_with(BoundAttributeValue::parse_terminated)?;
+                if let Some(deserial_value) = deserial.as_mut() {
+                    deserial_value.extend(value)
+                } else {
+                    deserial = Some(value);
+                };
+            } else {
+                return Err(syn::Error::new(
+                    item.span(),
+                    "bound attribute list only allow the keys 'serial' and 'deserial'",
+                ));
+            }
+        }
+
+        Ok(Self {
+            deserial,
+            serial,
+        })
+    }
+}
+
+impl TryFrom<&syn::Meta> for BoundAttribute {
+    type Error = syn::Error;
+
+    fn try_from(meta: &syn::Meta) -> Result<Self, Self::Error> {
+        match meta {
+            syn::Meta::List(list) => {
+                Ok(BoundAttribute::Separate(SeparateBoundValue::try_from(list)?))
+            }
+            syn::Meta::NameValue(name_value) => {
+                let syn::Lit::Str(ref lit_str) = name_value.lit else {
+                    return Err(syn::Error::new(name_value.lit.span(), "bound attribute must be a string literal"))
+                };
+
+                let value = lit_str.parse_with(BoundAttributeValue::parse_terminated)?;
+                Ok(BoundAttribute::Shared(value))
+            }
+            syn::Meta::Path(_) => {
+                Err(syn::Error::new(meta.span(), "bound attribute value is invalid"))
+            }
+        }
     }
 }
 
@@ -324,23 +503,30 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         _ => unimplemented!("#[derive(Deserial)] is not implemented for union."),
     };
 
+    let container_attributes = ContainerAttributes::try_from(ast.attrs.as_slice())?;
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-    // Extend where clauses with Deserial predicate of each generic.
-    let where_clause_deserial: proc_macro2::TokenStream = ast
-        .generics
-        .type_params()
-        .map(|type_param| {
-            let type_param_ident = &type_param.ident;
-            quote! (#type_param_ident: #root::Deserial,)
-        })
-        .collect();
 
-    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
-        let predicates = &where_clauses.predicates;
-        quote!(#predicates, where_clause_deserial)
-    } else {
-        where_clause_deserial
-    };
+    let where_clauses_tokens =
+        if let Some(attribute_bounds) = container_attributes.deserial_bounds() {
+            attribute_bounds.into_token_stream()
+        } else {
+            // Extend where clauses with Deserial predicate of each generic.
+            let where_clause_deserial: proc_macro2::TokenStream = ast
+                .generics
+                .type_params()
+                .map(|type_param| {
+                    let type_param_ident = &type_param.ident;
+                    quote! (#type_param_ident: #root::Deserial,)
+                })
+                .collect();
+
+            if let Some(where_clauses) = where_clauses {
+                let predicates = &where_clauses.predicates;
+                quote!(#predicates, where_clause_deserial)
+            } else {
+                where_clause_deserial
+            }
+        };
 
     let gen = quote! {
         #[automatically_derived]
@@ -353,23 +539,11 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     Ok(gen.into())
 }
 
-/// Derive the Serial trait for the type.
+/// Derive the [`Serial`] trait for the type.
 ///
-/// If the type is a struct all fields must implement the Serial trait. If the
-/// type is an enum then all fields of each of the enums must implement the
-/// Serial trait.
-///
-///
-/// Collections (Vec, BTreeMap, BTreeSet) and strings (String, str) are by
-/// default serialized by prepending the number of elements as 4 bytes
-/// little-endian. If this is too much or too little, fields of the above types
-/// can be annotated with `size_length`.
-///
-/// The value of this field is the number of bytes that will be used for
-/// encoding the number of elements. Supported values are 1, 2, 4, 8.
-///
-/// For BTreeMap and BTreeSet the serialize method will serialize values in
-/// increasing order of keys.
+/// If the type is a struct all fields must implement the [`Serial`] trait. If
+/// the type is an enum then all fields of each of the enums must implement the
+/// [`Serial`] trait.
 ///
 /// Fields of structs are serialized in the order they appear in the code.
 ///
@@ -379,7 +553,36 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 /// single byte is used to encode it. Otherwise two bytes are used for the tag,
 /// encoded in little endian.
 ///
-/// # Example
+/// ## Generic type bounds
+///
+/// By default a trait bound is added on each generic type for implementing
+/// [`Serial`]. However, if this is not desirable, the bound can be put
+/// explicitly using the `bound` attribute on the type overriding the default
+/// behavior.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(Serial)]
+/// #[concordium(bound(serial = "A: SomeOtherTrait"))]
+/// struct Foo<A> {
+///     bar: A,
+/// }
+/// ```
+///
+/// ## Collections
+///
+/// Collections (Vec, BTreeMap, BTreeSet) and strings (String, str) are by
+/// default serialized by prepending the number of elements as 4 bytes
+/// little-endian. If this is too much or too little, fields of the above types
+/// can be annotated with `size_length`.
+///
+/// The value of this field is the number of bytes that will be used for
+/// encoding the number of elements. Supported values are `1,` `2,` `4,` `8`.
+///
+/// For BTreeMap and BTreeSet the serialize method will serialize values in
+/// increasing order of keys.
+///
+/// ### Example
 /// ```ignore
 /// #[derive(Serial)]
 /// struct Foo {
@@ -513,27 +716,33 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         _ => unimplemented!("#[derive(Serial)] is not implemented for union."),
     };
 
+    let container_attributes = ContainerAttributes::try_from(ast.attrs.as_slice())?;
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-    // Extend where clauses with Serial predicate of each generic.
-    let state_parameter_option = find_state_parameter_attribute(&ast.attrs)?;
-    let where_clause_serial: proc_macro2::TokenStream = ast
-        .generics
-        .type_params()
-        .filter_map(|type_param| match &state_parameter_option {
-            // Skip adding the predicate for the state_parameter.
-            Some(state_parameter) if state_parameter == &type_param.ident => None,
-            _ => {
-                let type_param_ident = &type_param.ident;
-                Some(quote! (#type_param_ident: #root::Serial,))
-            }
-        })
-        .collect();
 
-    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
-        let predicates = &where_clauses.predicates;
-        quote!(#predicates, where_clause_serial)
+    let where_clauses_tokens = if let Some(attribute_bounds) = container_attributes.serial_bounds()
+    {
+        attribute_bounds.into_token_stream()
     } else {
-        where_clause_serial
+        // Extend where clauses with Serial predicate of each generic.
+        let where_clause_serial: proc_macro2::TokenStream = ast
+            .generics
+            .type_params()
+            .filter_map(|type_param| match &container_attributes.state_parameter {
+                // Skip adding the predicate for the state_parameter.
+                Some(state_parameter) if state_parameter == &type_param.ident => None,
+                _ => {
+                    let type_param_ident = &type_param.ident;
+                    Some(quote! (#type_param_ident: #root::Serial,))
+                }
+            })
+            .collect();
+
+        if let Some(where_clauses) = where_clauses {
+            let predicates = &where_clauses.predicates;
+            quote!(#predicates, where_clause_serial)
+        } else {
+            where_clause_serial
+        }
     };
 
     let gen = quote! {
@@ -562,4 +771,66 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     let mut tokens = impl_deserial(&ast)?;
     tokens.extend(impl_serial(&ast)?);
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn test_parse_deserial_shared_bounds() {
+        let ast: syn::ItemStruct = syn::parse_quote! {
+            #[concordium(bound = "T: B")]
+            struct MyStruct{}
+        };
+
+        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
+            .expect("Failed to parse container attributes");
+
+        let bounds = parsed.deserial_bounds();
+        assert!(bounds.is_some(), "Failed to add shared bound")
+    }
+
+    #[test]
+    fn test_parse_deserial_explicit_bounds() {
+        let ast: syn::ItemStruct = syn::parse_quote! {
+            #[concordium(bound(deserial  = "T: B"))]
+            struct MyStruct{}
+        };
+
+        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
+            .expect("Failed to parse container attributes");
+
+        let bounds = parsed.deserial_bounds();
+        assert!(bounds.is_some(), "Failed to add explicit bound")
+    }
+
+    #[test]
+    fn test_parse_serial_shared_bounds() {
+        let ast: syn::ItemStruct = syn::parse_quote! {
+            #[concordium(bound = "T: B")]
+            struct MyStruct{}
+        };
+
+        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
+            .expect("Failed to parse container attributes");
+
+        let bounds = parsed.serial_bounds();
+        assert!(bounds.is_some(), "Failed to add shared bound")
+    }
+
+    #[test]
+    fn test_parse_serial_explicit_bounds() {
+        let ast: syn::ItemStruct = syn::parse_quote! {
+            #[concordium(bound(serial  = "T: B"))]
+            struct MyStruct{}
+        };
+
+        let parsed = ContainerAttributes::try_from(ast.attrs.as_slice())
+            .expect("Failed to parse container attributes");
+
+        let bounds = parsed.serial_bounds();
+        assert!(bounds.is_some(), "Failed to add explicit bound")
+    }
 }
