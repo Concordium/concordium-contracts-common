@@ -519,6 +519,10 @@ impl FromStr for PublicKeyEcdsaSecp256k1 {
 #[repr(transparent)]
 pub struct SignatureEd25519(pub [u8; 64]);
 
+impl From<[u8; 64]> for SignatureEd25519 {
+    fn from(value: [u8; 64]) -> Self { SignatureEd25519(value) }
+}
+
 impl fmt::Display for SignatureEd25519 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
@@ -618,7 +622,7 @@ pub struct AccountPublicKeys {
 
 pub(crate) type CredentialIndex = u8;
 
-#[derive(crate::Serialize, Debug, SchemaType)]
+#[derive(Clone, PartialEq, Eq, crate::Serialize, Debug, SchemaType)]
 #[non_exhaustive]
 /// A cryptographic signature indexed by the signature scheme. Currently only a
 /// single scheme is supported, `ed25519`.
@@ -626,20 +630,75 @@ pub enum Signature {
     Ed25519(SignatureEd25519),
 }
 
-#[derive(crate::Serialize, Debug, SchemaType)]
+#[cfg(feature = "derive-serde")]
+mod serde_impls {
+    use super::*;
+    impl SerdeSerialize for Signature {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer, {
+            match self {
+                Signature::Ed25519(inner) => serializer.serialize_str(&hex::encode(&inner.0)),
+            }
+        }
+    }
+
+    impl<'de> SerdeDeserialize<'de> for Signature {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>, {
+            let s = String::deserialize(deserializer)?;
+            let sig = hex::decode(s).map_err(|e| serde::de::Error::custom(format!("{}", e)))?;
+            let Ok(sig) = sig.try_into() else {
+                return Err(serde::de::Error::custom("Signature length out of bounds."))
+            };
+            Ok(Signature::Ed25519(SignatureEd25519(sig)))
+        }
+    }
+
+    impl AsRef<[u8]> for Signature {
+        fn as_ref(&self) -> &[u8] {
+            match self {
+                Signature::Ed25519(x) => &x.0,
+            }
+        }
+    }
+}
+
+#[derive(crate::Serialize, Clone, PartialEq, Eq, Debug, SchemaType)]
 #[concordium(transparent)]
 /// Account signatures. This is an analogue of transaction signatures that are
 /// part of transactions that get sent to the chain.
 ///
 /// It should be thought of as a nested map, indexed on the outer layer by
 /// credential indexes, and the inner map maps key indices to [`Signature`]s.
+#[cfg_attr(
+    feature = "derive-serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
 pub struct AccountSignatures {
     #[concordium(size_length = 1)]
     pub sigs: BTreeMap<CredentialIndex, CredentialSignatures>,
 }
 
-#[derive(crate::Serialize, Debug, SchemaType)]
+impl AccountSignatures {
+    /// The total number of signatures.
+    pub fn num_signatures(&self) -> u32 {
+        // Since there are at most 256 credential indices, and at most 256 key indices
+        // using `as` is safe.
+        let x: usize = self.sigs.values().map(|sigs| sigs.sigs.len()).sum();
+        x as u32
+    }
+}
+
+#[derive(crate::Serialize, Clone, PartialEq, Eq, Debug, SchemaType)]
 #[concordium(transparent)]
+#[cfg_attr(
+    feature = "derive-serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
 pub struct CredentialSignatures {
     #[concordium(size_length = 1)]
     pub sigs: BTreeMap<KeyIndex, Signature>,
