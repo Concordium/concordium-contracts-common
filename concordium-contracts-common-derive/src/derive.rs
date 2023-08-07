@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use std::{collections::HashMap, convert::TryFrom, ops::Neg};
-use syn::{punctuated::Punctuated, spanned::Spanned, DataEnum, Ident, Meta};
+use syn::{punctuated::Punctuated, spanned::Spanned, DataEnum, Ident, Meta, parse_quote};
 
 /// Check a condition, if false return early with a provided error message
 /// wrapped in a `syn::Error`. Similar to `ensure!` from the `anyhow` crate.
@@ -47,7 +47,7 @@ const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ord
 /// A list of valid concordium attributes.
 const VALID_CONCORDIUM_ATTRIBUTES: [&str; 4] = ["state_parameter", "bound", "transparent", "repr"];
 
-fn get_root() -> proc_macro2::TokenStream { quote!(concordium_std) }
+fn get_root() -> syn::Path { parse_quote!(concordium_std) }
 
 /// Extend a punctuated list of tokens with another list, making sure that
 /// the punctuation is correctly maintained, i.e., if the original list ends
@@ -2051,6 +2051,7 @@ fn impl_deletable_field(ident: &proc_macro2::TokenStream) -> syn::Result<proc_ma
 }
 
 pub fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let root = get_root();
     let data_name = &ast.ident;
     let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
         Some(state_param) => state_param,
@@ -2141,9 +2142,9 @@ pub fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics Deletable for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
+        impl #impl_generics #root::Deletable for #data_name #ty_generics where #state_parameter : #root::HasStateApi, #where_predicates {
             fn delete(self) {
-                use concordium_std::Deletable;
+                use #root::Deletable;
                 #body
             }
         }
