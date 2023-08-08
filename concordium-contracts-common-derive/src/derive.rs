@@ -1127,6 +1127,10 @@ impl<'a> TagChecker<'a> {
 }
 
 pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let root = get_root();
+    let default_ty: syn::Path = parse_quote!(::core::default::Default);
+    let result_ty: syn::Path = parse_quote!(::core::result::Result);
+
     let data_name = &ast.ident;
 
     let span = ast.span();
@@ -1134,7 +1138,6 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let read_ident = format_ident!("__R", span = span);
 
     let source_ident = Ident::new("________________source", Span::call_site());
-    let root = get_root();
     let container_attributes = ContainerAttributes::try_from(ast.attrs.as_slice())?;
 
     let body_tokens = match &ast.data {
@@ -1155,6 +1158,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                             field,
                             &field_ident,
                             &source_ident,
+                            &root,
                         )?);
                         names.extend(quote!(#field_ident,))
                     }
@@ -1163,7 +1167,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 syn::Fields::Unnamed(_) => {
                     for (i, f) in data.fields.iter().enumerate() {
                         let field_ident = format_ident!("x_{}", i);
-                        field_tokens.extend(impl_deserial_field(f, &field_ident, &source_ident)?);
+                        field_tokens.extend(impl_deserial_field(f, &field_ident, &source_ident, &root)?);
                         names.extend(quote!(#field_ident,))
                     }
                     quote!(Ok(#data_name(#names)))
@@ -1216,7 +1220,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     let field_tokens: proc_macro2::TokenStream = field_names
                         .iter()
                         .zip(variant.fields.iter())
-                        .map(|(name, field)| impl_deserial_field(field, name, &source))
+                        .map(|(name, field)| impl_deserial_field(field, name, &source, &root))
                         .collect::<syn::Result<proc_macro2::TokenStream>>()?;
 
                     // Get the literal for the tag either from a 'tag' attribute of the index of the
@@ -1235,7 +1239,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     matches_tokens.extend(quote! {
                         #tag_lit => {
                             #field_tokens
-                            Ok(#data_name::#variant_ident #pattern)
+                            #result_ty::Ok(#data_name::#variant_ident #pattern)
                         },
                     });
 
@@ -1253,7 +1257,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     let field_tokens: proc_macro2::TokenStream = field_names
                         .iter()
                         .zip(variant.fields.iter())
-                        .map(|(name, field)| impl_deserial_field(field, name, &chained_source))
+                        .map(|(name, field)| impl_deserial_field(field, name, &chained_source, &root))
                         .collect::<syn::Result<proc_macro2::TokenStream>>()?;
 
                     let mut tags = Vec::new();
@@ -1271,11 +1275,11 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     }
                     matches_tokens.extend(quote! {
                         #(#tags)|* => {
-                            let mut tag_cursor = Cursor::new(&#tag_bytes_ident);
+                            let mut tag_cursor = #root::Cursor::new(&#tag_bytes_ident);
                             let mut chained_source = #root::Chain::new(&mut tag_cursor, #source_ident);
                             let #chained_source = &mut chained_source;
                             #field_tokens
-                            Ok(#data_name::#variant_ident #pattern)
+                            #result_ty::Ok(#data_name::#variant_ident #pattern)
                         },
                     });
                 }
@@ -1292,7 +1296,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     let tag = #repr_ident::from_le_bytes(#tag_bytes_ident);
                     match tag {
                         #matches_tokens
-                        _ => Err(Default::default())
+                        _ => #result_ty::Err(#default_ty::default())
                     }
                 }
             } else {
@@ -1300,7 +1304,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     let tag = <#repr_ident as #root::Deserial>::deserial(#source)?;
                     match tag {
                         #matches_tokens
-                        _ => Err(Default::default())
+                        _ => #result_ty::Err(#default_ty::default())
                     }
                 }
             }
@@ -1347,13 +1351,13 @@ fn impl_deserial_field(
     f: &syn::Field,
     ident: &syn::Ident,
     source: &syn::Ident,
+    root: &syn::Path,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
     let size_length = find_length_attribute(&f.attrs)?;
     let has_ctx = ensure_ordered || size_length.is_some();
     let ty = &f.ty;
-    let root = get_root();
 
     if has_ctx {
         // Default size length is u32, i.e. 4 bytes.
@@ -1604,6 +1608,8 @@ fn impl_deserial_with_state_field(
 }
 
 pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let root = get_root();
+    
     let data_name = &ast.ident;
     let span = ast.span();
     let read_ident = format_ident!("__R", span = span);
@@ -1756,7 +1762,7 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                     let field_tokens: proc_macro2::TokenStream = field_names
                         .iter()
                         .zip(variant.fields.iter())
-                        .map(|(name, field)| impl_deserial_field(field, name, &chained_source))
+                        .map(|(name, field)| impl_deserial_field(field, name, &chained_source, &root))
                         .collect::<syn::Result<proc_macro2::TokenStream>>()?;
 
                     let mut tags = Vec::new();
