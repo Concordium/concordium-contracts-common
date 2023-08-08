@@ -1162,7 +1162,7 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         )?);
                         names.extend(quote!(#field_ident,))
                     }
-                    quote!(Ok(#data_name{#names}))
+                    quote!(#result_ty::Ok(#data_name{#names}))
                 }
                 syn::Fields::Unnamed(_) => {
                     for (i, f) in data.fields.iter().enumerate() {
@@ -1170,9 +1170,9 @@ pub fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         field_tokens.extend(impl_deserial_field(f, &field_ident, &source_ident, &root)?);
                         names.extend(quote!(#field_ident,))
                     }
-                    quote!(Ok(#data_name(#names)))
+                    quote!(#result_ty::Ok(#data_name(#names)))
                 }
-                _ => quote!(Ok(#data_name{})),
+                _ => quote!(#result_ty::Ok(#data_name{})),
             };
             quote! {
                 #field_tokens
@@ -1377,9 +1377,8 @@ fn impl_serial_field(
     field: &syn::Field,
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
+    root: &syn::Path,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let root = get_root();
-
     if let Some(size_length) = find_length_attribute(&field.attrs)? {
         let l = format_ident!("U{}", 8 * size_length);
         Ok(quote!({
@@ -1393,6 +1392,9 @@ fn impl_serial_field(
 }
 
 pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let root = get_root();
+    let result_ty: syn::Path = parse_quote!(::core::result::Result);
+
     let data_name = &ast.ident;
 
     let span = ast.span();
@@ -1400,7 +1402,6 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let write_ident = format_ident!("W", span = span);
 
     let out_ident = format_ident!("out");
-    let root = get_root();
     let container_attributes = ContainerAttributes::try_from(ast.attrs.as_slice())?;
 
     let body = match ast.data {
@@ -1418,7 +1419,7 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         .map(|field| {
                             let field_ident = field.ident.clone().unwrap(); // safe since named fields.
                             let field_ident = quote!(&self.#field_ident);
-                            impl_serial_field(field, &field_ident, &out_ident)
+                            impl_serial_field(field, &field_ident, &out_ident, &root)
                         })
                         .collect::<syn::Result<_>>()?
                 }
@@ -1429,14 +1430,14 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     .map(|(i, field)| {
                         let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
                         let field_ident = quote!(&self.#i);
-                        impl_serial_field(field, &field_ident, &out_ident)
+                        impl_serial_field(field, &field_ident, &out_ident, &root)
                     })
                     .collect::<syn::Result<_>>()?,
                 syn::Fields::Unit => proc_macro2::TokenStream::new(),
             };
             quote! {
                 #fields_tokens
-                Ok(())
+                #result_ty::Ok(())
             }
         }
         syn::Data::Enum(ref data) => {
@@ -1472,7 +1473,7 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 let field_tokens: proc_macro2::TokenStream = field_names
                     .iter()
                     .zip(variant.fields.iter())
-                    .map(|(name, field)| impl_serial_field(field, &quote!(#name), &out_ident))
+                    .map(|(name, field)| impl_serial_field(field, &quote!(#name), &out_ident, &root))
                     .collect::<syn::Result<_>>()?;
 
                 // Get the literal for the tag either from a 'tag' attribute of the index of the
@@ -1531,7 +1532,7 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 match self {
                     #matches_tokens
                 }
-                Ok(())
+                #result_ty::Ok(())
             }
         }
         _ => unimplemented!("#[derive(Serial)] is not implemented for union."),
@@ -1574,7 +1575,7 @@ pub fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let gen = quote! {
         #[automatically_derived]
         impl #impl_generics #root::Serial for #data_name #ty_generics where #where_clauses_tokens {
-            fn serial<#write_ident: #root::Write>(&self, #out_ident: &mut #write_ident) -> Result<(), #write_ident::Err> {
+            fn serial<#write_ident: #root::Write>(&self, #out_ident: &mut #write_ident) -> #result_ty<(), #write_ident::Err> {
                 #body
             }
         }
