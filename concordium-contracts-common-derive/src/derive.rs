@@ -1589,6 +1589,7 @@ fn impl_deserial_with_state_field(
     ident: &syn::Ident,
     source: &syn::Ident,
     state_parameter: &syn::TypePath,
+    root: &syn::Path,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
@@ -1599,17 +1600,19 @@ fn impl_deserial_with_state_field(
         // Default size length is u32, i.e. 4 bytes.
         let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, #state_ident, #source)?;
+            let #ident = <#ty as #root::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(#root::schema::SizeLength::#l, #ensure_ordered, #state_ident, #source)?;
         })
     } else {
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialWithState<#state_parameter>>::deserial_with_state(#state_ident, #source)?;
+            let #ident = <#ty as #root::DeserialWithState<#state_parameter>>::deserial_with_state(#state_ident, #source)?;
         })
     }
 }
 
 pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let root = get_root();
+    let default_ty: syn::Path = parse_quote!(::core::default::Default);
+    let result_ty: syn::Path = parse_quote!(::core::result::Result);
     
     let data_name = &ast.ident;
     let span = ast.span();
@@ -1650,10 +1653,11 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                             &field_ident,
                             &source_ident,
                             state_parameter,
+                            &root,
                         )?);
                         names.extend(quote!(#field_ident,))
                     }
-                    quote!(Ok(#data_name{#names}))
+                    quote!(#result_ty::Ok(#data_name{#names}))
                 }
                 syn::Fields::Unnamed(_) => {
                     for (i, f) in data.fields.iter().enumerate() {
@@ -1664,12 +1668,13 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                             &field_ident,
                             &source_ident,
                             state_parameter,
+                            &root,
                         )?);
                         names.extend(quote!(#field_ident,))
                     }
-                    quote!(Ok(#data_name(#names)))
+                    quote!(#result_ty::Ok(#data_name(#names)))
                 }
-                _ => quote!(Ok(#data_name{})),
+                _ => quote!(#result_ty::Ok(#data_name{})),
             };
             quote! {
                 #field_tokens
@@ -1725,6 +1730,7 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                                 name,
                                 &source,
                                 state_parameter,
+                                &root,
                             )
                         })
                         .collect::<syn::Result<proc_macro2::TokenStream>>()?;
@@ -1745,7 +1751,7 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                     matches_tokens.extend(quote! {
                         #tag_lit => {
                             #field_tokens
-                            Ok(#data_name::#variant_ident #pattern)
+                            #result_ty::Ok(#data_name::#variant_ident #pattern)
                         },
                     });
 
@@ -1781,11 +1787,11 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                     }
                     matches_tokens.extend(quote! {
                         #(#tags)|* => {
-                            let mut tag_cursor = Cursor::new(&#tag_bytes_ident);
-                            let mut chained_source = concordium_std::Chain::new(&mut tag_cursor, #source_ident);
+                            let mut tag_cursor = #root::Cursor::new(&#tag_bytes_ident);
+                            let mut chained_source = #root::Chain::new(&mut tag_cursor, #source_ident);
                             let #chained_source = &mut chained_source;
                             #field_tokens
-                            Ok(#data_name::#variant_ident #pattern)
+                            #result_ty::Ok(#data_name::#variant_ident #pattern)
                         },
                     });
                 }
@@ -1798,19 +1804,19 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                 };
 
                 quote! {
-                    let #tag_bytes_ident = <#tag_byte_type_tokens as concordium_std::Deserial>::deserial(#source_ident)?;
+                    let #tag_bytes_ident = <#tag_byte_type_tokens as #root::Deserial>::deserial(#source_ident)?;
                     let tag = #repr_ident::from_le_bytes(#tag_bytes_ident);
                     match tag {
                         #matches_tokens
-                        _ => Err(Default::default())
+                        _ => #result_ty::Err(#default_ty::default())
                     }
                 }
             } else {
                 quote! {
-                    let idx = <#repr_ident as concordium_std::Deserial>::deserial(#source)?;
+                    let idx = <#repr_ident as #root::Deserial>::deserial(#source)?;
                     match idx {
                         #matches_tokens
-                        _ => Err(Default::default())
+                        _ => #result_ty::Err(#default_ty::default())
                     }
                 }
             }
@@ -1836,7 +1842,7 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
                         Some(state_parameter) if state_parameter.ident == type_param.ident => None,
                         _ => {
                             let type_param_ident = &type_param.ident;
-                            Some(quote! (#type_param_ident: concordium_std::DeserialWithState<#state_parameter>,))
+                            Some(quote! (#type_param_ident: #root::DeserialWithState<#state_parameter>,))
                         }
                     }
                 })
@@ -1852,8 +1858,14 @@ pub fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStre
 
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics concordium_std::DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : concordium_std::HasStateApi, #where_clauses_tokens {
-            fn deserial_with_state<#read_ident: concordium_std::Read>(#state_ident: &#state_parameter, #source_ident: &mut #read_ident) -> concordium_std::ParseResult<Self> {
+        impl #impl_generics #root::DeserialWithState<#state_parameter> for #data_name #ty_generics
+        where
+            #state_parameter : #root::HasStateApi, #where_clauses_tokens
+        {
+            fn deserial_with_state<#read_ident: #root::Read>(
+                #state_ident: &#state_parameter,
+                #source_ident: &mut #read_ident
+            ) -> #root::ParseResult<Self> {
                 #body_tokens
             }
         }
